@@ -1,9 +1,6 @@
 from __future__ import annotations
-from cProfile import label
-from turtle import width
-import pandas as pd
-from _models.functions import *
-from _models.data_process import *
+from functions import *
+from data_process import *
 import math
 
 class Variable_Types:

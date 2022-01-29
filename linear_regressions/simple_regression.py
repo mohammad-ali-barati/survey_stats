@@ -1,9 +1,9 @@
 import pickle
 import numpy as np
 import scipy.stats as scipy_stats
-from _models.data_process import Data, Sample
-from _models.basic_model import Variable_Types, Variable, Formula, Formulas
-from _models.functions import number_of_digits
+from data_process import Data, Sample
+from basic_model import Variable_Types, Variable, Formula, Formulas
+from functions import number_of_digits
 
 class Model:
     def __init__(self, dep_var:str, formula:str):

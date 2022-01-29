@@ -1,11 +1,10 @@
 import pickle
 
 import scipy.stats as scipy_stats
-import pandas as pd
 import numpy as np
-from _models.basic_model import Formula, Formulas, Variable_Types, Variable, Variables
-from _models.data_process import Data, Sample
-from _models.functions import number_of_digits
+from basic_model import Formula, Formulas, Variable_Types, Variable, Variables
+from data_process import Data, Sample
+from functions import number_of_digits
 
 
 

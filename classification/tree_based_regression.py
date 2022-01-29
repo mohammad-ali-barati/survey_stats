@@ -10,9 +10,9 @@ import pickle
 
 from scipy.stats.morestats import Mean, Std_dev
 
-from _models.data_process import *
-from _models.functions import *
-from _models.basic_model import *
+from data_process import *
+from functions import *
+from basic_model import *
 
 class Methods:
     # numeric

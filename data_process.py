@@ -3,7 +3,7 @@ import random
 from typing import Union
 import numpy as np
 
-from _models.functions import *
+from functions import *
 
 class Data_Types:
     cross = 'cross'
