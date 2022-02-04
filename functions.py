@@ -94,7 +94,7 @@ def seconds_to_days_hms(seconds:float, decimals:int=4)->str:
     hours = seconds % (24*60*60) // (60*60)
     minutes = seconds % (24*60*60) % (60*60) // 60
     secs = seconds % (24*60*60) % (60*60) // 60 + decs
-    return f'{days} days {hours}:{minutes}:{int(secs*10**decimals)/10**decimals}'
+    return f'{days:.0f} days {hours:.0f}:{minutes:.0f}:{int(secs*10**decimals)/10**decimals}'
 
 def is_numeric(x:Union[str, int, float, bool])->bool:
     if type(x)==int or type(x)==float:
@@ -105,4 +105,7 @@ def is_numeric_str(text:str)->bool:
     text.replace(' ', '')
     if text[0] == '-':
         text = text[1:]
-    return min([i.isdigit() for i in text.split('.') if i!=''])
+    try:
+        return min([i.isdigit() for i in text.split('.') if i!=''])
+    except:
+        return False

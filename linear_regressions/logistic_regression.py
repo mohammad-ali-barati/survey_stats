@@ -2,9 +2,9 @@ import pickle
 
 import scipy.stats as scipy_stats
 import numpy as np
-from basic_model import Formula, Formulas, Variable_Types, Variable, Variables
-from data_process import Data, Sample
-from functions import number_of_digits
+from survey_stats.basic_model import Formula, Formulas, Variable_Types, Variable, Variables
+from survey_stats.data_process import Data, Sample
+from survey_stats.functions import number_of_digits
 
 
 
@@ -65,6 +65,74 @@ class Model:
                 print(table)
             return Equation(dep_name, indep_names, indep_coefs, cov_var_coefs, table, sample)
 
+    def estimate_skip_collinear(self, sample:Sample, do_print:bool = True):
+        formula = self.formula.replace(' + ','+').replace('+ ','+').replace(' +','+')
+        dep_var = self.dep_var
+        # check collinearity
+        try:
+            return self.estimate(sample, do_print)
+        except:
+            # remove vars without data
+            for f in Formula(formula).split().formulas:
+                try:
+                    df = Formula(f).calculate(sample.data, sample.weights,skip_collinear=True)
+                    for var in df.variables():
+                        if Variable(var).stats.sum(Sample(df)) == 0 and Variable(var).stats.std(Sample(df)) == 0:
+                            formula = formula.replace('+'+f,'').replace(f+'+','')
+                            break
+                except:
+                    formula = formula.replace('+'+f,'').replace(f+'+','')
+            try:
+                return Model(dep_var, formula).estimate(sample, do_print)
+            except:
+                # remove most collinear variable
+                r2_max = 0
+                eq_max = ''
+                for f in Formula(formula).split().formulas:
+                    f_new = formula.replace('+'+f,'').replace(f+'+','')
+                    try:
+                        eq = Model(dep_var, f_new).estimate(sample, False)
+                        r2 = eq.r2adj
+                        if r2 > r2_max:
+                            eq_max = eq
+                    except:
+                        pass
+                if eq_max != '':
+                    if do_print:
+                        print(eq_max.table)
+                    return eq_max
+                else:
+                    raise ValueError(f"Error! collinear not found.")
+
+    @staticmethod
+    def __most_significant(dep_var:str, formula:str, sample:Sample, min_significant = 1, do_print = True):
+        n_nonsign, k, i_max = 1, 0, -1
+        while n_nonsign > 0 and k < 100:
+            eq = Model(dep_var, formula).estimate(sample, False)
+            n_nonsign, p_max, i_max = 0, 0, -1
+            for i, coef in enumerate(eq.indep_coefs):
+                p_value = (1- scipy_stats.t.cdf(abs(coef/eq.cov_var_coefs[i][i]**0.5), eq.df))*2
+                if p_value>p_max:
+                    p_max = p_value
+                    i_max = i
+                if p_value > min_significant:
+                    n_nonsign += 1
+            k += 1
+            formula = ''
+            for i, var in enumerate(eq.indep_vars):
+                if i != i_max:
+                    formula += var if formula == '' else f'+ {var}'
+        if n_nonsign == 0:
+            if do_print:
+                print(f"The number of iterations: {k}")
+                print(eq.table)
+            return eq
+        else:
+            raise ValueError(f"Error! there isn't any model with minimum significant of {min_significant}.")
+
+    def estimate_most_significant(self, sample:Sample, min_significant = 1, do_print = True):
+        return Model.__most_significant(self.dep_var, self.formula, sample, min_significant, do_print)
+        
 
 class Equation:
     def __init__(self, dep_var:str, indep_vars:list[str], indep_coefs:np.ndarray, 

@@ -10,9 +10,9 @@ import pickle
 
 from scipy.stats.morestats import Mean, Std_dev
 
-from data_process import *
-from functions import *
-from basic_model import *
+from survey_stats.data_process import *
+from survey_stats.functions import *
+from survey_stats.basic_model import *
 
 class Methods:
     # numeric
@@ -530,7 +530,7 @@ class Node:
             return self.dep_var.stats.mode(self.sample)
 
 class Model:
-    def __init__(self, dep_var:Union[str,dict,Variable], indep_vars:Union[dict,list,Variables], 
+    def __init__(self, dep_var:Union[str,dict,Variable], indep_vars:Union[dict,list,Variable], 
                     min_sample:int=5, min_significant:int=1, method:str=Methods.mse):
         #region dep_var
         if type(dep_var) == str:

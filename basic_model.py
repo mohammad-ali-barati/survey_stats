@@ -1,6 +1,6 @@
 from __future__ import annotations
-from functions import *
-from data_process import *
+from survey_stats.functions import *
+from survey_stats.data_process import *
 import math
 
 class Variable_Types:
@@ -156,7 +156,6 @@ class Variable:
                             is_nan = True
                     if not is_nan:
                         s += x
-                        print(s)
                 return s
             else:
                 raise ValueError(
@@ -243,12 +242,15 @@ class Variable:
     @classmethod
     def from_data(cls, data: Data, name:str) -> None:
         if name in data.values.keys():
-            nums, cats = 0, 0
-            for i in data.index():
-                if type(data.values[name][i]) == float or type(data.values[name][i]) == int:
+            nums, cats, i = 0, 0, 0
+            index = data.index()
+            while i in range(len(data.values[name])):
+                if type(data.values[name][index[i]]) == float or \
+                        type(data.values[name][index[i]]) == int:
                     nums += 1
                 else:
                     cats += 1
+                i += 1 + 2*i
             if nums < cats:
                 type_var = Variable_Types.categorical
             else:
@@ -257,16 +259,9 @@ class Variable:
 
     def values(self, sample: Sample) -> None:
         if self.name in  sample.data.values:
-            # values = [v for i,v in sample.data.values[self.name].items() if (i in sample.index) and (not is_numeric(v))]
-            values = []
-            for i,v in sample.data.values[self.name].items():
-                if i in sample.index:
-                    if is_numeric(v):
-                        if not np.isnan(v):
-                            values.append(v)
-                    else:
-                        values.append(v)
-            return list(set(values))
+            values = list(set(sample.data.values[self.name].values()))
+            values.sort()
+            return values
 
     def values_set(self, sample: Sample, half_of_set:bool=True):
         v_list = self.values(sample)
@@ -509,7 +504,7 @@ class Formula:
     @staticmethod
     def __remove_braces(text:str)->str:
         if text != '':
-            text = text.replace(' ', '')
+            # text = text.replace(' ', '')
             opened_braces = 0
             for i, w in enumerate(text):
                 if w == '(':
@@ -662,11 +657,11 @@ class Formula:
                 res = {}
                 if splits[0] in ['log', 'exp', 'sum', 'count', 'mean', 'std', 'min', 'max']:
                     if len(splits)!=2:
-                        raise ValueError(f"Error! function {splits[0]} has a argument, but there are more or less than one arguments.")
+                        raise ValueError(f"Error! function '{splits[0]}' has a argument, but there are more or less than one arguments.")
                     if not type(splits[1]) == Data:
                         if not is_numeric_str(splits[1]):
                             if not splits[1] in data.variables():
-                                raise ValueError(f"Error! variable '{splits[1]} is not in data.' ")
+                                raise ValueError(f"Error! variable '{splits[1]}' is not in data.")
                     
                     if type(splits[1]) == Data:
                         s, s2, n, ws, minimum, maximum = {}, {}, {}, {}, {}, {}
@@ -693,7 +688,7 @@ class Formula:
                     if splits[0] in ['sum', 'count', 'mean', 'std', 'min', 'max']:
                         if weights != '1':
                             if not weights in data.variables():
-                                raise ValueError(f"Error! variable {weights} as waights, is not in data.")
+                                raise ValueError(f"Error! variable '{weights}' as waights, is not in data.")
                         start = True
                         for i in data.index():
                             w = 1 if weights == '1' else data.values[weights][i]
@@ -2308,11 +2303,15 @@ class Formula:
                                                     data.values[var_left][i] * \
                                                         data.values[var_right][i]
                                             elif operator == '/':
-                                                if data.values[var_right][i] != 0:
+                                                try:
                                                     res[Formula.__name_data(var_left, operator, var_right)][i] = \
                                                         data.values[var_left][i] / \
                                                             data.values[var_right][i]
-                                                else:
+                                                except:
+                                                    print(i, data.values[var_left][i], type(data.values[var_left][i]))
+                                                    print(i, data.values[var_right][i], type(data.values[var_right][i]))
+                                                    if i>10:
+                                                        raise
                                                     res[Formula.__name_data(var_left, operator, var_right)][i] = np.nan
                                             elif operator == '^':
                                                 res[Formula.__name_data(var_left, operator, var_right)][i] = \
@@ -2408,81 +2407,92 @@ class Formula:
     def calculate(self, data:Data, weights:str='1', skip_collinear:bool=False)->Data:
         splits = Formula.__split([self.formula], data)[0]
         if type(splits) != list:
-            if splits in data.variables():
-                variable = Variable.from_data(data, splits)
-                if variable.type == Variable_Types.numeric:
-                    data = data.select_variables([variable.name])
-                    data = data.select_index(data.index())
-                    return data
-                elif variable.type == Variable_Types.categorical:
-                    values = variable.values(Sample(data))[:-1] if skip_collinear else variable.values(Sample(data))
-                    vars = {}
-                    for value in values:
-                        vars[f'{variable.name}={value}'] = {}
-                    for i in data.index():
-                        val_i = data.values[variable.name][i]
-                        for value in values:
-                            if is_numeric(val_i):
-                                if np.isnan(val_i):
-                                    vars[f'{variable.name}={value}'][i] = np.nan
-                            elif val_i == value:
-                                vars[f'{variable.name}={value}'][i] = 1
-                            else:
-                                vars[f'{variable.name}={value}'][i] = 0
-                    return Data(data.type, vars)
-            else:
-                if is_numeric_str(splits):
-                    values = {}
-                    for i in data.index():
-                        values[i] = float(splits)
-                    return Data(data.type, {splits:values})
-                elif splits[0] == '-' and splits[1:] in data.variables():
-                    variable = Variable.from_data(data, splits[1:])
+            if type(splits) == str:
+                splits = splits.strip()
+                if splits in data.variables():
+                    variable = Variable.from_data(data, splits)
                     if variable.type == Variable_Types.numeric:
-                        values = {}
-                        for i in data.index():
-                            values[i] = -data.values[splits[1:]]
-                        return Data(data.type, {splits: values})
+                        data = data.select_variables([variable.name])
+                        data = data.select_index(data.index())
+                        return data
                     elif variable.type == Variable_Types.categorical:
                         values = variable.values(Sample(data))[:-1] if skip_collinear else variable.values(Sample(data))
                         vars = {}
                         for value in values:
-                            vars[f'-{variable.name}={value}'] = {}
+                            vars[f'{variable.name}={value}'] = {}
                         for i in data.index():
                             val_i = data.values[variable.name][i]
                             for value in values:
                                 if is_numeric(val_i):
                                     if np.isnan(val_i):
-                                        vars[f'-{variable.name}={value}'][i] = np.nan
+                                        vars[f'{variable.name}={value}'][i] = np.nan
                                 elif val_i == value:
-                                    vars[f'-{variable.name}={value}'][i] = -1
+                                    vars[f'{variable.name}={value}'][i] = 1
                                 else:
-                                    vars[f'-{variable.name}={value}'][i] = 0
+                                    vars[f'{variable.name}={value}'][i] = 0
                         return Data(data.type, vars)
                 else:
-                    raise ValueError(f"Error! variable '{splits}' is not in data.")
+                    if is_numeric_str(splits):
+                        values = {}
+                        for i in data.index():
+                            values[i] = float(splits)
+                        return Data(data.type, {splits:values})
+                    elif splits[0] == '-' and splits[1:] in data.variables():
+                        variable = Variable.from_data(data, splits[1:])
+                        if variable.type == Variable_Types.numeric:
+                            values = {}
+                            for i in data.index():
+                                values[i] = -data.values[splits[1:]]
+                            return Data(data.type, {splits: values})
+                        elif variable.type == Variable_Types.categorical:
+                            values = variable.values(Sample(data))[:-1] if skip_collinear else variable.values(Sample(data))
+                            vars = {}
+                            for value in values:
+                                vars[f'-{variable.name}={value}'] = {}
+                            for i in data.index():
+                                val_i = data.values[variable.name][i]
+                                for value in values:
+                                    if is_numeric(val_i):
+                                        if np.isnan(val_i):
+                                            vars[f'-{variable.name}={value}'][i] = np.nan
+                                    elif val_i == value:
+                                        vars[f'-{variable.name}={value}'][i] = -1
+                                    else:
+                                        vars[f'-{variable.name}={value}'][i] = 0
+                            return Data(data.type, vars)
+                    else:
+                        raise ValueError(f"Error! variable '{splits}' is not in data.")
         return Formula.__calculate(splits, data, weights, skip_collinear)
         
     def split(self)->Formulas:
         formulas = []
-        self_formula = self.formula.replace(' ', '')
+        self_formula = self.formula.strip()
         in_braces = False
-        formula, i = '', 0
+        formula, i, in_func = '', 0, False
         while i < len(self_formula):
             w = self_formula[i]
-            if w == '(':
+            for func in ['lag', 'dif', 'gr', 'log', 'exp','sum', 'count', 'mean', 
+                    'std', 'min', 'max']:
+                if self_formula[i:i+len(func)] == func and self_formula[i+len(func)] == '(':
+                    in_func = True
+                    break
+            if in_func:
+                formula += w
+                if w == ')':
+                    in_func = False
+            elif w == '(':
                 in_braces = True
             elif in_braces and w == ')':
                 in_braces = False
-            elif w == '-' and not in_braces:
-                if i>1:
-                    self_formula = self_formula[:i] + '+' + self_formula[i:]
-                    break
-                    i += 1
+            elif in_braces:
+                formula += w
+            elif not(w == '+' or in_braces):
+                formula += w
+            elif w == '+' and not in_braces:
+                formulas.append(formula.strip())
+                formula = ''
             i += 1
-        formulas_plus = self_formula.split('+')
-        for formula in formulas_plus:
-            formulas.append(formula)
+        formulas.append(formula.strip())
         return Formulas(formulas)
 
     def filter(self, value:str|int|float, data:Data)->Data:
@@ -2508,7 +2518,7 @@ class Formulas:
         return res
 
 
-class Table:
+class FormulaTable:
     def __init__(self, based_variable:str|dict|Variable, formulas:list[str]|Formulas, sample:Sample) -> None:
         if type(based_variable) == str:
             self.based_variable = Variable.from_data(sample.data, based_variable)
@@ -2519,33 +2529,34 @@ class Table:
         # furmulas must begin with 'sum' 'count 'mean' 'std' 'min' or 'max'. 
         # otherwise add all of them to start of all formulas.
         if type(formulas) == list:
+            fs = []
             for formula in formulas:
                 has_func = False
                 for func in ['sum', 'count', 'mean', 'std', 'min', 'max']:
                     if func == formula[:len(func)]:
                         has_func = True
+                        fs.append(formula)
                         break
                 if not has_func:
-                    formulas.remove(formula)
                     for func in ['sum', 'count', 'mean', 'std', 'min', 'max']:
-                        formulas.append(f"{func}({formula})")
-            self.formulas = Formulas(formulas)
+                        fs.append(f"{func}({formula})")
+            self.formulas = Formulas(fs)
         else:
             self.formulas = formulas
         self.sample = sample
 
-    def to_data(self, weights='1', skip_collinear:bool=False)->Data:
-        data_calc = self.sample.data.select_variables([self.based_variable.name])
+    def to_data(self, skip_collinear:bool=False)->Data:
+        data_calc = self.sample.data.select_variables([self.based_variable.name, self.sample.weights])
         for formula in self.formulas.formulas:
             for func in ['sum', 'count', 'mean', 'std', 'min', 'max']:
                 if func == formula[:len(func)]:
-                    data_calc.add_data(Formula(formula[len(func)+1:-1]).calculate(self.sample.data, weights, skip_collinear))
+                    data_calc.add_data(Formula(formula[len(func)+1:-1]).calculate(self.sample.data, self.sample.weights, skip_collinear))
         data_values = {}
         values = self.based_variable.values(self.sample)
         if self.based_variable.type == 'categorical':
             for value in values:
                 data = Formula(self.based_variable.name + '=' + value).filter(1, data_calc)
-                calculations = self.formulas.calculate_all(data, weights, skip_collinear)
+                calculations = self.formulas.calculate_all(data, self.sample.weights, skip_collinear)
                 for var in calculations.variables():
                     if not var in data_values.keys(): 
                         data_values[var] = {}
@@ -2557,7 +2568,7 @@ class Table:
             values.sort()
             for value in values:
                 data = Formula(self.based_variable.name).filter(value, data_calc)
-                calculations = self.formulas.calculate_all(data, weights, skip_collinear)
+                calculations = self.formulas.calculate_all(data, self.sample.weights, skip_collinear)
                 for var in calculations.variables():
                     if not var in data_values.keys(): 
                         data_values[var] = {}
@@ -2570,8 +2581,8 @@ class Table:
     def __str__(self) -> str:
         return self.to_data()
 
-    def plot(self, weights='1', skip_collinear:bool=False)->None:
-        data = self.to_data(weights, skip_collinear)
+    def plot(self, skip_collinear:bool=False)->None:
+        data = self.to_data(skip_collinear)
         import matplotlib.pyplot as plt
         n = len(data.variables())
         bar_width = 1/(n+1)
@@ -2588,4 +2599,79 @@ class Table:
         plt.legend()
         plt.show()
 
-
+class PivotTable:
+    formulas = ['sum', 'count', 'mean', 'std', 'min', 'max']
+    def __init__(self, based_variable:str|dict|Variable, dep_variables:list[str|dict|Variable], sample:Sample, formula:str='mean')->None:
+        if type(based_variable) == str:
+            self.based_variable = Variable.from_data(sample.data, based_variable)
+        elif type(based_variable) == dict:
+            self.based_variable = Variable.from_dict(based_variable)
+        else:
+            self.based_variable = based_variable
+        dep_vars = []
+        for var in dep_variables:
+            if type(var) == str:
+                v = Variable.from_data(sample.data, var)
+                if v.type == 'numeric':
+                    dep_vars.append(v)
+            elif type(var) == dict:
+                for nam, typ in var.items():
+                    if typ == 'numeric': 
+                        dep_vars.append(Variable(nam, typ))
+                    break
+            else:
+                dep_vars.append(var)
+        self.dep_variables = dep_vars
+        self.formula = formula
+        self.sample = sample
+    
+    def to_data(self):
+        s, s2, n, mi, ma = {}, {}, {}, {}, {}
+        vals = self.based_variable.values(self.sample)
+        for val in vals:
+            s[val], s2[val], n[val], mi[val], ma[val]= {}, {}, {}, {}, {}
+            for var in self.dep_variables:
+                s[val][var.name], s2[val][var.name], n[val][var.name]= 0, 0, 0
+        for i in self.sample.index:
+            for var in self.dep_variables:
+                x = self.sample.data.values[var.name][i]
+                w = self.sample.data.values[self.sample.weights][i] if self.sample.weights != '1' else 1
+                val = self.sample.data.values[self.based_variable.name][i]
+                if is_numeric(x):
+                    if not np.isnan(x):
+                        s[val][var.name] += w*x
+                        s2[val][var.name] += w*(x**2)
+                        n[val][var.name] += w
+                        if var.name in mi[val].keys():
+                            if mi[val][var.name] < x:
+                                mi[val][var.name] = x
+                        else:
+                            mi[val][var.name] = x
+                        if var.name in ma[val].keys():
+                            if ma[val][var.name] < x:
+                                ma[val][var.name] = x
+                        else:
+                            ma[val][var.name] = x
+        values = {}
+        for val in vals:
+            values[val] = {}
+            for var in self.dep_variables:
+                if self.formula == 'sum':
+                    values[val].update({var.name:s[val][var.name]})
+                elif self.formula == 'count':
+                    values[val].update({var.name:n[val][var.name]})
+                elif self.formula == 'mean':
+                    if n[val][var.name]>0:
+                        values[val].update({var.name:s[val][var.name]/n[val][var.name]})
+                    else:
+                        values[val].update({var.name:np.nan})
+                elif self.formula == 'std':
+                    if n[val][var.name]>0:
+                        values[val].update({var.name:((s2[val][var.name]-s[val][var.name]**2/n[val][var.name])//n[val][var.name])**0.5})
+                    else:
+                        values[val].update({var.name:np.nan})
+                elif self.formula == 'min':
+                    values[val].update({var.name:mi[val][var.name]})
+                elif self.formula == 'max':
+                    values[val].update({var.name:ma[val][var.name]})
+        return Data(self.sample.data.type, values)

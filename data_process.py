@@ -1,9 +1,9 @@
 from __future__ import annotations
-import random
+import os
 from typing import Union
 import numpy as np
 
-from functions import *
+from survey_stats.functions import *
 
 class Data_Types:
     cross = 'cross'
@@ -93,7 +93,7 @@ class Data:
     def index(self, without_checking:bool=True) -> None:
         if without_checking:
             for v in self.values.keys():
-                return [i for i in self.values[v].keys()]
+                return list(self.values[v].keys())
         else:
             start, ind = True, []
             for v in self.values.keys():
@@ -207,11 +207,14 @@ class Data:
             for var in vars:
                 if var in self.variables():
                     is_nan = False
-                    if is_numeric(self.values[var][i]):
-                        is_nan = np.isnan(self.values[var][i])
-                    if is_nan:
-                        is_nan = True
-                        break
+                    try:
+                        if is_numeric(self.values[var][i]):
+                            is_nan = np.isnan(self.values[var][i])
+                        if is_nan:
+                            is_nan = True
+                            break
+                    except:
+                        pass
             if is_nan:
                 for var in self.values.keys():
                     try:
@@ -233,19 +236,29 @@ class Data:
 
     def add_data(self,new_data:Data=None)->Data:
         if self.index() == None:
-            indexes = [v for v in new_data.index()]
+            new_index = new_data.index()
+            indexes = new_index
         else:
-            indexes = [*self.index(),*[v for v in new_data.index() if not v in self.index()]]
-        for var in new_data.variables():
-            if var in self.variables():
+            old_index = self.index()
+            indexes = set(old_index)
+            new_index = set(new_data.index())-indexes
+            indexes.update(new_index)
+            new_index = list(new_index)
+            indexes = list(indexes)
+            indexes.sort()
+        old_vars = self.variables()
+        vars = set(old_vars)
+        new_vars = new_data.variables()
+        vars.update(set(new_vars))
+        vars = list(vars)
+        for var in vars:
+            if not var in old_vars:
+                self.values[var] = dict(zip(indexes,[np.nan]*len(indexes)))
+            if var in new_vars:
                 self.values[var].update(new_data.values[var])
             else:
-                self.values[var] = {}
-                for i in indexes:
-                    if not i in new_data.index():
-                        self.values[var][i] = np.nan
-                    else:
-                        self.values[var][i] = new_data.values[var][i]
+                new_vals = dict(zip(new_index,[np.nan]*len(new_index)))
+                self.values[var].update(new_vals)
     
     def transpose(self)->Data:
         values_t = {}
@@ -258,48 +271,35 @@ class Data:
         return Data(self.type, values_t)
 
     @classmethod
-    def read_csv(cls, path_file:str, data_type:str='cross', na:any='', do_faster_instead_of_low_space:bool=True)->Data:
-        if do_faster_instead_of_low_space:
-            with open(path_file, 'r') as f:
-                lines = f.readlines()
-            data, variables = {}, lines[0][:-1].split(',')      # end of line is \n
-            for var in variables:
-                data[var] = {}
-            for index, line in enumerate(lines[1:]):
-                row = line[:-1].split(',')      # end of line is \n
-                for col in range(len(row)):
-                    if row[col] == na:      # NA
-                        data[variables[col]][index] = np.nan
-                    else:
-                        if row[col].isdigit():
-                            data[variables[col]][index] = int(row[col])
-                        elif is_numeric_str(row[col]):
-                            data[variables[col]][index] = float(row[col])
-                        else:
-                            data[variables[col]][index] = row[col]
-        else:
-            import csv
-            with open(path_file, 'r') as f:
-                reader = csv.reader(f)
-                start, data = True, {}
-                while True:
-                    try:
-                        if start:
-                            variables = next(reader)
-                            for var in variables:
-                                data[var] = {}
-                            start = False
-                            index = 0
-                        else:
-                            values = next(reader)
-                            for col in range(len(values)):
-                                data[variables[col]][index] = values[col]
-                        index += 1
-                    except:
-                        break
-        return cls(data_type, data)
+    def read_csv(cls, path_file:str, data_type:str='cross', na:any='')->Data:
+        with open(path_file,'r') as f:
+            lines = f.readlines()
+        n = len(lines)
+        values, vars = {}, []
+        for j, var in enumerate(lines[0].split(',')):
+            var = var.replace('ï»؟','').replace('\n','')
+            vars.append(var)
+            values[var] = {}
+        for i in range(1,n):
+            for j, val in enumerate(lines[i].split(',')):
+                val = val.replace('ï»؟','').replace('\n','')
+                if val == na:
+                    values[vars[j]][i] = np.nan
+                elif is_numeric_str(val):
+                    values[vars[j]][i] = float(val)
+                else:
+                    values[vars[j]][i] = val
+        return cls(data_type, values)
 
     def to_csv(self, path_file:str, na:str=''):
+        if os.path.exists(path_file):
+            res = input(f"'{path_file}' exists, do you want the new file to replace it? (y/n) ")
+            if res == 'y':
+                os.remove(path_file)
+            else:
+                new_name = input('please, enter a new name without the path: ')
+                path_file = path_file.replace(path_file.split('\\')[-1],new_name)
+
         with open(path_file, 'a') as f:
             title = 'index'
             for var in self.variables():
@@ -349,16 +349,19 @@ class Sample:
 
     def split(self, ratio: float, names: list, method: str = 'random') -> list[Sample]:
         if method == 'random':
-            ws = sum([w for i, w in self.data.values[self.weights].items() if i in self.index])
-            weights = [w/ws for i, w in self.data.values[self.weights].items() if i in self.index]
-            S1 = np.random.choice(self.index, int(ratio*len(self.index)), p=weights, replace=False)
+            if self.weights == '1':
+                S1 = np.random.choice(self.index, int(ratio*len(self.index)), replace=False)
+            else:
+                ws = sum([w for i, w in self.data.values[self.weights].items() if i in self.index])
+                weights = [w/ws for i, w in self.data.values[self.weights].items() if i in self.index]
+                S1 = np.random.choice(self.index, int(ratio*len(self.index)), p=weights, replace=False)
 
-            S2 = [i for i in self.index if not i in S1]
+            S2 = list(set(self.index)-set(S1))
         elif method == 'start':
             n = int(ratio * len(self.index))
             S1, S2 = self.index[:n], self.index[n:]
         elif method == 'end':
-            n = int(ratio * len(self.index))
+            n = int((1-ratio) * len(self.index))
             S1, S2 = self.index[:n], self.index[n:]
         return Sample(self.data, S1, names[0], self.weights), Sample(self.data, S2, names[1], self.weights)
 

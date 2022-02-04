@@ -1,9 +1,10 @@
+from multiprocessing.sharedctypes import Value
 import pickle
 import numpy as np
 import scipy.stats as scipy_stats
-from data_process import Data, Sample
-from basic_model import Variable_Types, Variable, Formula, Formulas
-from functions import number_of_digits
+from survey_stats.data_process import Data, Sample
+from survey_stats.basic_model import Variable_Types, Variable, Formula, Formulas
+from survey_stats.functions import number_of_digits
 
 class Model:
     def __init__(self, dep_var:str, formula:str):
@@ -24,12 +25,33 @@ class Model:
         res = ''
         len_var = int(max([len(var) for var in indep_names]))
         len_coefs = int(max([number_of_digits(c)+5 for c in coefs]))
-        len_sd = int(max([number_of_digits(cov_var_coefs[i][i]**0.5) + 5
-                            for i in range(len(cov_var_coefs))]))
-        len_t = int(max([number_of_digits(coefs[i]/cov_var_coefs[i][i]**0.5)+5
-                            for i in range(len(cov_var_coefs))]))
-        len_p_value = int(max([(1 - scipy_stats.t.cdf(abs(coefs[i]/cov_var_coefs[i][i]**0.5), df))*2
-                           for i in range(len(cov_var_coefs))]))
+        len_sd = 5
+        for i in range(len(cov_var_coefs)):
+            try:
+                if number_of_digits(cov_var_coefs[i][i]**0.5) + 5 > len_sd:
+                    len_sd = number_of_digits(cov_var_coefs[i][i]**0.5) + 5
+            except:
+                 pass
+        # len_sd = int(max([number_of_digits(cov_var_coefs[i][i]**0.5) + 5
+        #                     for i in range(len(cov_var_coefs))]))
+        len_t = 5
+        for i in range(len(cov_var_coefs)):
+            try:
+                if number_of_digits(coefs[i]/cov_var_coefs[i][i]**0.5) + 5 > len_t:
+                    len_t = number_of_digits(coefs[i]/cov_var_coefs[i][i]**0.5) + 5
+            except:
+                 pass
+        # len_t = int(max([number_of_digits(coefs[i]/cov_var_coefs[i][i]**0.5)+5
+        #                     for i in range(len(cov_var_coefs))]))
+        len_p_value = 5
+        for i in range(len(cov_var_coefs)):
+            try:
+                if (1 - scipy_stats.t.cdf(abs(coefs[i]/cov_var_coefs[i][i]**0.5), df))*2 > len_p_value:
+                    len_p_value = (1 - scipy_stats.t.cdf(abs(coefs[i]/cov_var_coefs[i][i]**0.5), df))*2
+            except:
+                 pass
+        # len_p_value = int(max([(1 - scipy_stats.t.cdf(abs(coefs[i]/cov_var_coefs[i][i]**0.5), df))*2
+        #                    for i in range(len(cov_var_coefs))]))
         # add margin to columns equals to 5 left and right.
         len_var, len_coefs, len_sd, len_t, len_p_value = [
             i+10 for i in [len_var, len_coefs, len_sd, len_t, len_p_value]]
@@ -40,12 +62,14 @@ class Model:
         res += '|' + 'Variables'.center(len_var) + '|' + 'Coefs.'.center(len_coefs) + '|' + 'std.'.center(
             len_sd) + '|' + 't'.center(len_t) + '|' + 'p-value'.center(len_p_value) + '|\n'
         res += ' ' + '-'*len_total + ' \n'
-        for i in range(len(cov_var_coefs)):
+        for i, var in enumerate(indep_names):
+            # i = indep_names.index(var)
+        # for i in range(len(cov_var_coefs)):
             sd = float(cov_var_coefs[i][i]**0.5)
             t = float(coefs[i] / sd)
             p_value = (1- scipy_stats.t.cdf(abs(t),df))*2
             c = float(coefs[i])
-            res += '|' + str(indep_names[i]).center(len_var) + '|' + f'{c:.4f}'.center(len_coefs) + '|' + f'{sd:.4f}'.center(
+            res += '|' + str(var).center(len_var) + '|' + f'{c:.4f}'.center(len_coefs) + '|' + f'{sd:.4f}'.center(
                 len_sd) + '|' + f'{t:.4f}'.center(len_t) + '|' + f'{p_value:.4f}'.center(len_p_value) + '|\n'
         res += ' ' + '-'*len_total + ' \n'
         res += f'R2: {r2:.4f}\n'
@@ -54,29 +78,24 @@ class Model:
         return res
 
     def estimate(self, sample:Sample, do_print:bool = True):
-        # if Variable.from_data(sample.data, self.dep_var).type != Variable_Types.numeric:
-        #     raise ValueError(f"Error! dependent variable '{self.dep_var}' must be nuemric but it is {Variable.from_data(sample.data, self.dep_var).type}.")
         if self.formula != '':
             indep_num = Formula(self.formula).split().calculate_all(sample.get_data(), skip_collinear=True)
+            indep_names = indep_num.variables()
             dep_num = Formula(self.dep_var).calculate(sample.get_data())
-            data = Data(sample.data.type)
+            data = Data(sample.data.type, {})
             data.add_data(indep_num)
             data.add_data(dep_num)
             if sample.weights != '1':
-                w_num = sample.data.select_variables(sample.weights)
+                w_num = sample.data.select_variables([sample.weights])
                 data.add_data(w_num)
                 data.dropna()
                 w_num = data.select_variables([sample.weights])
                 dep_num = data.select_variables([self.dep_var])
-                data.drop([self.dep_var, sample.weights])
-                indep_num = data
+                indep_num = data.select_variables(indep_names)
             else:
                 data.dropna()
                 dep_num = data.select_variables([self.dep_var])
-                data.drop([self.dep_var])
-                indep_num = data
-            
-            indep_names = indep_num.variables()
+                indep_num = data.select_variables(indep_names)
             x_arr = indep_num.to_numpy()
             y_arr = dep_num.to_numpy()
             if sample.weights == '1':
@@ -109,7 +128,6 @@ class Model:
             else:
                 w_list = [w for _,w in w_num.values[sample.weights].items()]
                 w = np.diag(w_list)
-                # print(w)
                 x_w_x = np.dot(np.dot(x_arr.T, w),x_arr)
                 if np.linalg.det(x_w_x) != 0:
                     x_w_x_inv = np.linalg.inv(x_w_x)
@@ -157,32 +175,74 @@ class Model:
         else:
             raise ValueError(f"Error! formula is empty!")
 
-    def best_estimate(self, sample:Sample, min_significant = 1, do_print = True):
-        eq = self.estimate(sample, False)
-        cov = eq.cov_var_coefs
-        coefs = eq.indep_coefs
-        j = 0
-        func = ''
-        nonsign = False
-        n_nonsign = 0
-        for s in cov:
-            t = coefs[j]/s[j]**0.5
-            p_value = (1- scipy_stats.t.cdf(abs(t), eq.df))*2
-            if p_value <= min_significant:
-                func += ' + ' + eq.indep_vars[j]
-            elif nonsign:
-                func += ' + ' + eq.indep_vars[j]
-                n_nonsign += 1
-            else:
-                n_nonsign += 1
-                nonsign = True
-            j += 1
-        if n_nonsign == 0:
+    def estimate_skip_collinear(self, sample:Sample, do_print:bool = True):
+        formula = self.formula.replace(' + ','+').replace('+ ','+').replace(' +','+')
+        dep_var = self.dep_var
+        # check collinearity
+        try:
             return self.estimate(sample, do_print)
-        else:
-            self.function = func[3:]
-            return self.best_estimate(sample, min_significant, do_print)
+        except:
+            # remove vars without data
+            for f in Formula(formula).split().formulas:
+                try:
+                    df = Formula(f).calculate(sample.data, sample.weights,skip_collinear=True)
+                    for var in df.variables():
+                        if Variable(var).stats.sum(Sample(df)) == 0 and Variable(var).stats.std(Sample(df)) == 0:
+                            formula = formula.replace('+'+f,'').replace(f+'+','')
+                            break
+                except:
+                    formula = formula.replace('+'+f,'').replace(f+'+','')
+            try:
+                return Model(dep_var, formula).estimate(sample, do_print)
+            except:
+                # remove most collinear variable
+                r2_max = 0
+                eq_max = ''
+                for f in Formula(formula).split().formulas:
+                    f_new = formula.replace('+'+f,'').replace(f+'+','')
+                    try:
+                        eq = Model(dep_var, f_new).estimate(sample, False)
+                        r2 = eq.r2adj
+                        if r2 > r2_max:
+                            eq_max = eq
+                    except:
+                        pass
+                if eq_max != '':
+                    if do_print:
+                        print(eq_max.table)
+                    return eq_max
+                else:
+                    raise ValueError(f"Error! collinear not found.")
 
+    @staticmethod
+    def __most_significant(dep_var:str, formula:str, sample:Sample, min_significant = 1, do_print = True):
+        n_nonsign, k, i_max = 1, 0, -1
+        while n_nonsign > 0 and k < 100:
+            eq = Model(dep_var, formula).estimate(sample, False)
+            n_nonsign, p_max, i_max = 0, 0, -1
+            for i, coef in enumerate(eq.indep_coefs):
+                p_value = (1- scipy_stats.t.cdf(abs(coef/eq.cov_var_coefs[i][i]**0.5), eq.df))*2
+                if p_value>p_max:
+                    p_max = p_value
+                    i_max = i
+                if p_value > min_significant:
+                    n_nonsign += 1
+            k += 1
+            formula = ''
+            for i, var in enumerate(eq.indep_vars):
+                if i != i_max:
+                    formula += var if formula == '' else f'+ {var}'
+        if n_nonsign == 0:
+            if do_print:
+                print(f"The number of iterations: {k}")
+                print(eq.table)
+            return eq
+        else:
+            raise ValueError(f"Error! there isn't any model with minimum significant of {min_significant}.")
+
+    def estimate_most_significant(self, sample:Sample, min_significant = 1, do_print = True):
+        return Model.__most_significant(self.dep_var, self.formula, sample, min_significant, do_print)
+        
 class Equation:
     def __init__(self, dep_var:str, indep_vars:list[str], indep_coefs:list[float], 
                     cov_var_coefs:list[list], df:int, r2:float, r2adj:float, 
