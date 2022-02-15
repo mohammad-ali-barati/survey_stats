@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+from tkinter import Variable
 from typing import Union
 import numpy as np
 
@@ -49,8 +50,12 @@ class Data:
                     val = '⁝'
                 if is_numeric(val):
                     val = str(round(val,4))
-                if width<len(str(var)) or width<len(val):
-                    width = max(len(str(var)), len(val))
+                if width<len(str(var)):
+                    width = len(str(var))
+                if width<len(val):
+                    width = len(val)
+                if width<len(str(i)):
+                    width = len(str(i))
         width = min(width, 20)
         #endregion
         #region title
@@ -234,16 +239,19 @@ class Data:
             lst.append(in_lst)
         return np.array(lst)
 
-    def add_data(self,new_data:Data=None)->Data:
+    def add_data(self, new_data:Data=None)->Data:
         if self.index() == None:
             new_index = new_data.index()
             indexes = new_index
         else:
             old_index = self.index()
             indexes = set(old_index)
-            new_index = set(new_data.index())-indexes
-            indexes.update(new_index)
-            new_index = list(new_index)
+            if new_data.values != {}:
+                new_index = set(new_data.index())-indexes
+                indexes.update(new_index)
+                new_index = list(new_index)
+            else:
+                new_index = []
             indexes = list(indexes)
             indexes.sort()
         old_vars = self.variables()
@@ -256,7 +264,7 @@ class Data:
                 self.values[var] = dict(zip(indexes,[np.nan]*len(indexes)))
             if var in new_vars:
                 self.values[var].update(new_data.values[var])
-            else:
+            elif new_index != []:
                 new_vals = dict(zip(new_index,[np.nan]*len(new_index)))
                 self.values[var].update(new_vals)
     
@@ -288,6 +296,7 @@ class Data:
                 elif is_numeric_str(val):
                     values[vars[j]][i] = float(val)
                 else:
+                    # print(val)
                     values[vars[j]][i] = val
         return cls(data_type, values)
 
@@ -303,7 +312,7 @@ class Data:
         with open(path_file, 'a') as f:
             title = 'index'
             for var in self.variables():
-                title += ',' + var
+                title += ',' + str(var)
             f.write(title + '\n')
             for i in self.index():
                 line = str(i)
@@ -320,6 +329,13 @@ class Data:
 
     def __len__(self):
         return len(self.index())
+
+    def add_trend(self):
+        j = 0
+        self.values['trend'] = {}
+        for i in self.index():
+            self.values['trend'][i] = j
+            j += 1
 
 class Sample:
     def __init__(self, data: Data, index:list=[], name:str=None, weights:str='1') -> None:
@@ -365,19 +381,66 @@ class Sample:
             S1, S2 = self.index[:n], self.index[n:]
         return Sample(self.data, S1, names[0], self.weights), Sample(self.data, S2, names[1], self.weights)
 
-    def get_weights(self, vars_conditions:list[list], totals:list[Union[int,float]])-> None:
-        new_data=self.data.add_dummies(vars_conditions)
-        vars_num = new_data.to_numpy()
-        totals_num = np.array(totals)
-        I = np.ones(len(self.data.index()))
-        D = np.identity(len(self.data.index()))
-        w_values_list = list(D @ I + D @ vars_num @ np.linalg.inv(vars_num.T @
-                           D @ vars_num) @ np.transpose(totals_num.T - I.T @ D.T @ vars_num))
-        w_values = dict(zip(self.data.index(), w_values_list))
-        res = {}
-        res['weights'] = w_values
-        self.data.values.update(res)
-        self.weights = 'weights'
+    def get_weights(self, path_file_csv:str)-> None:
+        # vars_conditions:list[list], totals:list[Union[int,float]]
+        groups = Data.read_csv(path_file_csv)
+        groups_n = len(groups.index())
+        set_index, set_totals = False, False
+        for var in groups.variables():
+            strs, nums = 0, 0
+            for i in groups.index():
+                if is_numeric(groups.values[var][i]):
+                    nums += 1
+                else:
+                    strs += 1
+            if strs == groups_n:
+                groups.set_index(var)
+                set_index = True
+            elif nums == groups_n:
+                totals = list(groups.values[var].values())
+                set_totals = True
+            else:
+                raise ValueError(f"Error! {var} includes numbers and strings, data must be include a string variable as group name and a numeric variable as population of group.")
+        if set_index and set_totals:
+            vars_conditions = []
+            for g in groups.index():
+                r = []
+                for v in g.split('*'):
+                    if len(v.split('>='))>1:
+                        i = v.split('>=')
+                        sep = '>='
+                    elif len(v.split('<='))>1:
+                        i = v.split('<=')
+                        sep = '<='
+                    elif len(v.split('<'))>1:
+                        i = v.split('<')
+                        sep = '<'
+                    elif len(v.split('>'))>1:
+                        i = v.split('>')
+                        sep = '>'
+                    elif len(v.split('='))>1:
+                        i = v.split('=')
+                        sep = '='
+                    if is_numeric_str(i[1]):
+                        i[1] = float(i[1])
+                    r.append((i[0],sep,i[1]))
+                vars_conditions.append(r)
+
+            
+            new_data=self.data.add_dummies(vars_conditions)
+            vars_num = new_data.to_numpy()
+            totals_num = np.array(totals)
+            I = np.ones(len(self.data.index()))
+            D = np.identity(len(self.data.index()))
+            w_values_list = list(D @ I + D @ vars_num @ np.linalg.inv(vars_num.T @
+                            D @ vars_num) @ np.transpose(totals_num.T - I.T @ D.T @ vars_num))
+            w_values = dict(zip(self.data.index(), w_values_list))
+            res = {}
+            res['weights'] = w_values
+            self.data.values.update(res)
+            self.weights = 'weights'
+        else:
+            raise ValueError(f"Error! data must be include a string variable as group name and a numeric variable as population of group.")
 
     def __len__(self):
         return len(self.index)

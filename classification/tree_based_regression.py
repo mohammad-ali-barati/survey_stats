@@ -458,6 +458,7 @@ class Node:
     def best_split(self, indep_vars:list, min_sample:int=1, min_significant:int=1, method=Methods.mse):
         start, has_min, n = True, False, 0
         for var in indep_vars:
+            # print(var)
             if len(var.values(self.sample)) > 1:
                 n += 1
                 bsv = self.best_value(var, min_sample, min_significant, method)

@@ -220,7 +220,7 @@ class Equation:
                 res.values[self.dep_var + '_f'][i] = yf[j]
                 j += 1
             else:
-                res.values[i, self.dep_var + '_f'][i] = np.nan
+                res.values[self.dep_var + '_f'][i] = np.nan
         
         return res
 

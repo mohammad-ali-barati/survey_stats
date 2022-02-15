@@ -2518,8 +2518,82 @@ class Formulas:
         return res
 
 
+class CountTable:
+    def __init__(self, sample:Sample, row1:list[str], row2:list[str]=[], column:list[str]=[]) -> None:
+        self.row1 = row1
+        self.row2 = row2
+        self.column = column
+        self.sample = sample
+        self.data = sample.get_data()
+    
+    def __str__(self):
+        return str(self.to_data())
+
+    def to_data(self):
+        res = Data(self.data.type, {})
+        if self.row2 == [] and self.column == []:
+            row1_name = self.row1[0].split('=')[0].split('<')[0].split('>')[0]
+            res.values[row1_name] = {}
+            res.values['count'] = {}
+            i = 0
+            for r1 in self.row1:
+                res.values[row1_name][i] = r1
+                res.values['count'][i] = len(Formula(r1).filter(1,self.data))
+                i+=1
+        elif self.row2 == []:
+            row1_name = self.row1[0].split('=')[0].split('<')[0].split('>')[0]
+            res.values[row1_name] = {}
+            for col in self.column:
+                res.values[col] = {}
+            i = 0
+            for r1 in self.row1:
+                res.values[row1_name][i] = r1
+                for col in self.column:
+                    res.values[col][i] = len(Formula(r1+'*'+col).filter(1,self.data))
+                i+=1
+        elif self.column == []:
+            row1_name = self.row1[0].split('=')[0].split('<')[0].split('>')[0]
+            row2_name = self.row2[0].split('=')[0].split('<')[0].split('>')[0]
+            res.values[row1_name] = {}
+            res.values[row2_name] = {}
+            res.values['count'] = {}
+            i = 0
+            for r1 in self.row1:
+                start_row = True
+                for r2 in self.row2:
+                    if start_row:
+                        res.values[row1_name][i] = r1
+                    else:
+                        res.values[row1_name][i] = np.nan
+                    res.values[row2_name][i] = r2
+                    res.values['count'][i] = len(Formula(r1+'*'+r2).filter(1,self.data))
+                    start_row = False
+                    i+=1
+        else:
+            row1_name = self.row1[0].split('=')[0].split('<')[0].split('>')[0]
+            row2_name = self.row2[0].split('=')[0].split('<')[0].split('>')[0]
+            res.values[row1_name] = {}
+            res.values[row2_name] = {}
+            for col in self.column:
+                res.values[col] = {}
+            i = 0
+            for r1 in self.row1:
+                start_row = True
+                for r2 in self.row2:
+                    if start_row:
+                        res.values[row1_name][i] = r1
+                    else:
+                        res.values[row1_name][i] = np.nan
+                    res.values[row2_name][i] = r2
+                    for col in self.column:
+                        res.values[col][i] = len(Formula(r1+'*'+r2+'*'+col).filter(1,self.data))
+                    start_row = False
+                    i+=1
+        return res
+
 class FormulaTable:
-    def __init__(self, based_variable:str|dict|Variable, formulas:list[str]|Formulas, sample:Sample) -> None:
+    def __init__(self, sample:Sample, based_variable:str|dict|Variable, formulas:list[str]|Formulas) -> None:
+        self.sample = sample
         if type(based_variable) == str:
             self.based_variable = Variable.from_data(sample.data, based_variable)
         elif type(based_variable) == dict:
@@ -2543,7 +2617,6 @@ class FormulaTable:
             self.formulas = Formulas(fs)
         else:
             self.formulas = formulas
-        self.sample = sample
 
     def to_data(self, skip_collinear:bool=False)->Data:
         data_calc = self.sample.data.select_variables([self.based_variable.name, self.sample.weights])
@@ -2579,7 +2652,7 @@ class FormulaTable:
         return Data(self.sample.data.type, data_values)
 
     def __str__(self) -> str:
-        return self.to_data()
+        return str(self.to_data())
 
     def plot(self, skip_collinear:bool=False)->None:
         data = self.to_data(skip_collinear)
@@ -2601,7 +2674,8 @@ class FormulaTable:
 
 class PivotTable:
     formulas = ['sum', 'count', 'mean', 'std', 'min', 'max']
-    def __init__(self, based_variable:str|dict|Variable, dep_variables:list[str|dict|Variable], sample:Sample, formula:str='mean')->None:
+    def __init__(self, sample:Sample, based_variable:str|dict|Variable, dep_variables:list[str|dict|Variable], formula:str='mean')->None:
+        self.sample = sample
         if type(based_variable) == str:
             self.based_variable = Variable.from_data(sample.data, based_variable)
         elif type(based_variable) == dict:
@@ -2623,8 +2697,10 @@ class PivotTable:
                 dep_vars.append(var)
         self.dep_variables = dep_vars
         self.formula = formula
-        self.sample = sample
-    
+
+    def __str__(self):
+        return str(self.to_data())
+
     def to_data(self):
         s, s2, n, mi, ma = {}, {}, {}, {}, {}
         vals = self.based_variable.values(self.sample)
@@ -2643,7 +2719,7 @@ class PivotTable:
                         s2[val][var.name] += w*(x**2)
                         n[val][var.name] += w
                         if var.name in mi[val].keys():
-                            if mi[val][var.name] < x:
+                            if mi[val][var.name] > x:
                                 mi[val][var.name] = x
                         else:
                             mi[val][var.name] = x
