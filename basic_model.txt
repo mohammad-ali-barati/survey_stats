@@ -1,0 +1,12 @@
+Variables:
+	stats.correlation(sample:Sample)
+	stats.covariance
+	stats.means
+
+Formula:
+	calculate():
+		time functions ('lag', 'dif', 'gr') can use for not numeric indexs
+		add function 'mean_gr(var|data,lag)'
+		fix a bug in operator /
+		fix a bug about names
+	split(): fix a bug about braces

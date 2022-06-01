@@ -1,0 +1,11 @@
+Model:
+1. convert indep_coefs from np.narray to list
+
+Equation:
+1. add wald_test() function for simple state when coeficents equals to a fixed number indepenently.
+2. rename from 'simple_regression' to 'ols'
+3. fix a bug in forecast for subsamples
+4. fix a bug in forecast for dep_var when it's a formula
+5. fix a bug in __str__() for negative intercept
+6. fix a bug about t and p are nan.
+7. fix a bug in forecast: self.sample.data --> sample.data

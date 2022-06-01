@@ -1,0 +1,25 @@
+Data:
+1- add a new function fillna(...)
+1-1- list fillna_methods = ['last', 'mean', 'growth']
+1-2- replace: overwrite (TRUE) or not (False==default)
+2- edit function to_csv()
+2-1- add new argument: 'replace:bool=True'
+2-2- add new argument: 'skip_index'
+3- edit function read_csv() for decimals like 0.20003e-05
+4- read_csv() add new argument 'index'
+5- __str__() finction a bug in width
+6- add read_text() and to_text() functions
+7- fix a bug for error alert in set_index() when var is list and len(var) != len(data.index())
+8- fix a bug in data.__srt__() for the number of columns less than 7.
+9- fix a bug in __str__() for when 'index' belong to variables
+10- add a new function add_index()
+11- fix raise ValueError in Sample when sample.index is not a subset of data.index.
+12- encoding in to_csv() and read_csv() functions
+13.- fillna for list of variables
+14. add function add_a_variable()
+15. fillna() mathod can be a number that it's replace by na-s. 
+16. add line_plot() function
+
+
+TimeSeries:
+1- creation

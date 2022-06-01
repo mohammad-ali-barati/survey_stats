@@ -1,0 +1,7 @@
+1. create ar (autoregression)
+2. fix a bug in forecast() about lags.
+3. fix a bug in forecast: self.sample.data --> sample.data
+4. add overwrite functions estimate_most_significant() and estimate_skip_collinear
+5. fix a bug in estimate_most_significant() and estimate_skip_collinear() for change self.lags
+6. add new argument (is_dynamic:bool = True) to forecast() function. when it is False, lag of observed (not forecasted) use for forecasting.
+

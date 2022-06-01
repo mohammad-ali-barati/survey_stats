@@ -1,0 +1,5 @@
+1. edit is_numeric_str for decimals like 0.2003e-05
+2. add function to_float() uses in read_csv() in dataprocess.Data
+3. add function days_of_month(year:int, month:int)->int
+4. add function date_to_standard(date:str|int, date_type:str='daily')->str
+5. fix len of number *****
