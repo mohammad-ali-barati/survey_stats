@@ -3,6 +3,7 @@ import os, jdatetime
 from tkinter.ttk import Separator
 from attr import validate
 import numpy as np
+import urllib, csv
 
 from survey_stats.functions import *
 
@@ -274,23 +275,43 @@ class Data:
 
     @classmethod
     def read_csv(cls, path_file:str, data_type:str='cross', na:any='', index:str='index')->Data:
-        with open(path_file,'r', encoding='utf-8') as f:
-            lines = f.readlines()
-        n = len(lines)
-        values, vars = {}, []
-        for j, var in enumerate(lines[0].split(',')):
-            var = var.replace('ï»؟','').replace('\n','')
-            vars.append(var)
-            values[var] = {}
-        for i in range(1,n):
-            for j, val in enumerate(lines[i].split(',')):
-                val = val.replace('ï»؟','').replace('\n','')
-                if val == na:
-                    values[vars[j]][i] = np.nan
-                elif is_numeric_str(val):
-                    values[vars[j]][i] = to_float(val)
+        if path_file[:4].lower()=='http':
+            response = urllib.request.urlopen(path_file)
+            lines = [l.decode('utf-8') for l in response.readlines()]
+            cr = csv.reader(lines)
+            values, vars, is_first = {}, [], True
+            for i, row in enumerate(cr):
+                if is_first:
+                    vars = row
+                    for var in vars:
+                        values[var] = {}
+                    is_first = False
                 else:
-                    values[vars[j]][i] = val
+                    for j, val in enumerate(row):
+                        if val == na:
+                            values[vars[j]][i] = np.nan
+                        elif is_numeric_str(val):
+                            values[vars[j]][i] = to_float(val)
+                        else:
+                            values[vars[j]][i] = val
+        else:
+            with open(path_file,'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            n = len(lines)
+            values, vars = {}, []
+            for j, var in enumerate(lines[0].split(',')):
+                var = var.replace('ï»؟','').replace('\n','')
+                vars.append(var)
+                values[var] = {}
+            for i in range(1,n):
+                for j, val in enumerate(lines[i].split(',')):
+                    val = val.replace('ï»؟','').replace('\n','')
+                    if val == na:
+                        values[vars[j]][i] = np.nan
+                    elif is_numeric_str(val):
+                        values[vars[j]][i] = to_float(val)
+                    else:
+                        values[vars[j]][i] = val
         data = cls(data_type, values)
         if index in vars:
             data.set_index(index)

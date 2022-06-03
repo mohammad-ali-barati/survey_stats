@@ -19,7 +19,7 @@ Data:
 14. add function add_a_variable()
 15. fillna() mathod can be a number that it's replace by na-s. 
 16. add line_plot() function
-
+17. read_csv from url
 
 TimeSeries:
 1- creation
