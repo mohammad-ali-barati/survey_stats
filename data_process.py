@@ -293,7 +293,7 @@ class Data:
                         elif is_numeric_str(val):
                             values[vars[j]][i] = to_float(val)
                         else:
-                            values[vars[j]][i] = val
+                            values[vars[j]][i] = val.strip()
         else:
             with open(path_file,'r', encoding='utf-8') as f:
                 lines = f.readlines()
@@ -533,7 +533,7 @@ class Data:
                 elif is_numeric_str(val):
                     values[vars[j]][i] = to_float(val)
                 else:
-                    values[vars[j]][i] = val
+                    values[vars[j]][i] = val.strip()
         data = cls(data_type, values)
         if index in vars:
             data.set_index(index)
@@ -608,6 +608,101 @@ class Data:
         interval = int(len(self)/20) if len(self)>40 else 2 if len(self)>40 else 1
         ax.set_xticks(ax.get_xticks()[::interval])
         plt.show()
+
+    @classmethod
+    def read_xls(cls, path_file: str, data_type:str='cross', na:any='', index:str='index') -> Data:
+        from bs4 import BeautifulSoup
+
+        if 'http:\\' in path_file or 'https:\\' in path_file:
+            import requests
+            content = requests.get(path_file).text
+        else:
+            with open(path_file, encoding='utf8') as f:
+                content = f.read()
+        soup = BeautifulSoup(content, 'html.parser')
+
+        #titles
+        titles = [tag.text.strip() for tag in soup.find('thead').find_all('th')]
+        #values
+        rows = soup.find('tbody').find_all('tr')
+        values, i = {}, 0
+        for row in rows:
+            cols = row.find_all('th')
+            i += 1
+            val = {}
+            for j, col in enumerate(cols):
+                vali = col.text
+                if vali != '':
+                    if is_numeric_str(vali):
+                        vali = to_float(vali)
+                    elif vali == na:
+                        vali = np.nan
+                    else:
+                        vali = vali.strip()
+                val[titles[j]] = vali
+            values[i] = val
+        res = cls(data_type, values).transpose()
+        if index != 'index' or index in titles:
+            res.set_index(index)
+        return res
+
+    def to_xls(self,  path_file:str, na:str='', replace:bool = True, skip_index:bool=False):
+        #heading
+        data = '''
+        <html>
+            <head>
+                <meta charset="utf-8" />
+            </head>
+
+
+
+            <table>
+        '''
+        #titles
+        data += '''
+            <thead>
+                <tr>
+                    <th>index</th>'''
+        for var in self.variables():
+            data += f'''
+                    <th>{var}</th>'''
+        data += '''
+                </tr>
+            </thead>
+        '''
+        #values
+        data += '''
+            <tbody>
+        '''
+        for row in self.index():
+            data += '''
+                <tr>
+            '''
+            data += f'''
+                    <th>{row}</th>'''
+            for var in self.variables():
+                vali, isnan = self.values[var][row], False
+                if is_numeric(vali):
+                    isnan = np.isnan(vali)
+                if isnan:
+                    data += f'''
+                        <th>{na}</th>'''
+                else:
+                    data += f'''
+                        <th>{vali}</th>'''
+            data += '''
+                </tr>
+            '''
+        data += '''
+            </tbody>
+        '''
+        #ending
+        data += '''
+            </table>
+        </html>
+        '''
+        with open(path_file, 'w', encoding='utf8') as f:
+            f.write(data)
 
 class Sample:
     def __init__(self, data: Data, index:list=[], name:str=None, weights:str='1') -> None:
@@ -861,7 +956,7 @@ class TimeSeries(Data):
         self.reset_date_type()
         self.complete_dates()
 
-    def to_monthly(self, sum_or_average:str)->TimeSeries:
+    def to_monthly(self, method:str, farvardin_adj:bool=False)->TimeSeries:
         if self.date_type == 'daily':
             values = {}
             for var in self.variables():
@@ -895,7 +990,7 @@ class TimeSeries(Data):
                                 summation += last_value
                                 count += 1
                         if count>0:
-                            values[var][month] = summation / count if sum_or_average=='average' else summation
+                            values[var][month] = summation / count if method=='average' else summation
                         elif not month in values[var].keys():
                             values[var][month] = np.nan
                     else:
@@ -937,7 +1032,7 @@ class TimeSeries(Data):
                                 summation += last_value
                                 count += 1
                         if count>0:
-                            values[var][month] = summation / count if sum_or_average=='average' else summation
+                            values[var][month] = summation / count if method=='average' else summation
                         elif not month in values[var].keys():
                             values[var][month] = np.nan
                     else:
@@ -949,22 +1044,151 @@ class TimeSeries(Data):
         elif self.date_type == 'monthly':
             return self
         elif self.date_type == 'seasonal':
-            values = {}
-            start_year, start_season = [int(x) for x in self.dates[0].split('-')]
-            end_year, end_season = [int(x) for x in self.dates[-1].split('-')]
-            start_month, end_month = (start_season-1)*3+1, (end_season-1)*3+3
-            for year in range(start_year, end_year+1):
-                st = start_month if year == start_year else 1
-                en = end_month+1 if year == end_year else 13
-                for month in range(st,en):
-                    date = f'{year}-{month}' if month >9 else f'{year}-0{month}'
-                    for var in self.variables():
-                        if not var in values.keys(): 
-                            values[var] = {}
-                        if sum_or_average=='sum':
-                            values[var][date] = self.values[var][f'{year}-{(month-1)//3+1}']/3
-                        elif sum_or_average=='average':
-                            values[var][date] = self.values[var][f'{year}-{(month-1)//3+1}']
+            if method == 'curve':
+                #region Type Error
+                if self.date_type != 'seasonal':
+                    raise ValueError(f"Error! 'cureve' method only work on 'seanonal' data types.")
+                #endregion
+                values = {}
+                for var in self.variables():
+                    #region start and end values
+                    start, nans, dates, month_dates = True, 0, [], []
+                    for date in self.dates:
+                        if not np.isnan(self.values[var][date]):
+                            dates.append(date)
+                            start = False
+                        elif not np.isnan(self.values[var][date]) and not start:
+                            if nans > 0:
+                                raise ValueError(f"Error! there is a 'nan' bettween values of '{var}'.")
+                            n += 1
+                            dates.append(date)
+                        elif np.isnan(self.values[var][date]) and not start:
+                            nans += 1
+                    #endregion
+
+                    rows = len(dates) * 3
+                    coefs_arr, const_vec = np.zeros((rows, rows)), np.zeros((rows, 1))
+
+                    #region values
+                    for i in range(rows):
+                        year,season = [int(x) for x in dates[i//3].split('-')]
+                        month = (season-1)*3 + i%3 + 1
+                        date = f'{year}-0{month}' if month < 10 else f'{year}-{month}'
+                        month_dates.append(date)
+                        if i == 0:
+                            coefs_arr[i][0] = 1             # j=
+                            coefs_arr[i][1] = 1             # j=1
+                            coefs_arr[i][2] = 1             # j=2
+                            coefs_arr[i][3] = 0             # j=3
+                            for j in range(4, rows):        # j>3
+                                coefs_arr[i][j] = 0
+                            const_vec[i][0] = self.values[var][dates[0]]
+                        elif i == 1:
+                            coefs_arr[i][0] = 2             # j=0
+                            coefs_arr[i][1] = -3            # j=1
+                            coefs_arr[i][2] = 0             # j=2
+                            coefs_arr[i][3] = 1             # j=3
+                            for j in range(4, rows):        # j>3
+                                coefs_arr[i][j] = 0
+                            const_vec[i][0] = 0
+                        elif i == 2:
+                            coefs_arr[i][0] = 1             # j=0
+                            coefs_arr[i][1] = 0             # j=1
+                            coefs_arr[i][2] = -3            # j=2
+                            coefs_arr[i][3] = 2             # j=3
+                            for j in range(4, rows):        # j>3
+                                coefs_arr[i][j] = 0
+                            const_vec[i][0] = 0
+                        elif 2<i<rows-3:
+                            for j in range(i-1):            # j<i-1
+                                coefs_arr[i][j] = 0
+                            if i % 3 == 0:
+                                coefs_arr[i][i-1] = 1        # j=i-1
+                                coefs_arr[i][i] = -2         # j=i
+                                coefs_arr[i][i+1] = 1        # j=i+1
+                                coefs_arr[i][i+2] = 0        # j=i+2
+                                coefs_arr[i][i+3] = 0        # j=i+3
+                                const_vec[i][0] = 0
+                            elif i % 3 == 1:
+                                coefs_arr[i][i-2] = 0        # j=i-2
+                                coefs_arr[i][i-1] = 0        # j=i-1
+                                coefs_arr[i][i] = 1          # j=i
+                                coefs_arr[i][i+1] = -2       # j=i+1
+                                coefs_arr[i][i+2] = 1        # j=i+2
+                                const_vec[i][0] = 0
+                            elif i % 3 == 2:
+                                coefs_arr[i][i-3] = 0        # j=i-3
+                                coefs_arr[i][i-2] = 1        # j=i-2
+                                coefs_arr[i][i-1] = 1        # j=i-1
+                                coefs_arr[i][i] = 1          # j=i
+                                coefs_arr[i][i+1] = 0        # j=i+1
+                                const_vec[i][0] = self.values[var][dates[i//3]]
+                            for j in range(i+4,rows):       # j>i+3
+                                coefs_arr[i][j] = 0
+                        elif i == rows-3:
+                            coefs_arr[i][rows-4] = 2
+                            coefs_arr[i][rows-3] = -3
+                            coefs_arr[i][rows-2] = 0
+                            coefs_arr[i][rows-1] = 1
+                            for j in range(rows-4):
+                                coefs_arr[i][j] = 0
+                            const_vec[i][0] = 0
+                        elif i == rows-2:
+                            coefs_arr[i][rows-4] = 1
+                            coefs_arr[i][rows-3] = 0
+                            coefs_arr[i][rows-2] = -3
+                            coefs_arr[i][rows-1] = 2
+                            for j in range(rows-4):
+                                coefs_arr[i][j] = 0
+                            const_vec[i][0] = 0
+                        elif i == rows-1:
+                            coefs_arr[i][rows-4] = 0
+                            coefs_arr[i][rows-3] = 1
+                            coefs_arr[i][rows-2] = 1
+                            coefs_arr[i][rows-1] = 1
+                            for j in range(rows-4):
+                                coefs_arr[i][j] = 0
+                            const_vec[i][0] = self.values[var][dates[-1]]
+                    #endregion
+                    #region adjusted farvardins
+                    if farvardin_adj:
+                        values_arr = np.matmul(np.linalg.inv(coefs_arr), const_vec)
+                        values_lst = list([float(x[0]) for x in values_arr])
+                        values_dict = dict(zip(month_dates, values_lst))
+                        for date in dates:
+                            year, season = [int(x) for x in date.split('-')]
+                            if season == 1:
+                                # first adjusted
+                                m01 = values_dict[f'{year}-01']*0.6
+                                m02 = values_dict[f'{year}-01']*0.4+values_dict[f'{year}-02']*.8
+                                m03 = values_dict[f'{year}-03']*1.2
+                                total = values_dict[f'{year}-01'] + \
+                                    values_dict[f'{year}-02'] + \
+                                    values_dict[f'{year}-03']
+                                # final adjusted
+                                values_dict[f'{year}-01'] = m01 * total / (m01+m02+m03)
+                                values_dict[f'{year}-02'] = m02 * total / (m01+m02+m03)
+                                values_dict[f'{year}-03'] = m03 * total / (m01+m02+m03)
+                    #endregion
+                    values[var] = values_dict
+                
+            else:
+                values = {}
+                start_year, start_season = [int(x) for x in self.dates[0].split('-')]
+                end_year, end_season = [int(x) for x in self.dates[-1].split('-')]
+                start_month, end_month = (start_season-1)*3+1, (end_season-1)*3+3
+                for year in range(start_year, end_year+1):
+                    st = start_month if year == start_year else 1
+                    en = end_month+1 if year == end_year else 13
+                    for month in range(st,en):
+                        date = f'{year}-{month}' if month >9 else f'{year}-0{month}'
+                        for var in self.variables():
+                            if not var in values.keys(): 
+                                values[var] = {}
+                            if method=='sum':
+                                values[var][date] = self.values[var][f'{year}-{(month-1)//3+1}']/3
+                            elif method=='average':
+                                values[var][date] = self.values[var][f'{year}-{(month-1)//3+1}']
             res = TimeSeries('time', values)
             res.reset_date_type()
             res.complete_dates()
@@ -977,9 +1201,9 @@ class TimeSeries(Data):
                     for var in self.variables():
                         if not var in values.keys(): 
                             values[var] = {}
-                        if sum_or_average=='sum':
+                        if method=='sum':
                             values[var][date] = self.values[var][year]/12
-                        elif sum_or_average=='average':
+                        elif method=='average':
                             values[var][date] = self.values[var][year]
             res = TimeSeries('time', values)
             res.reset_date_type()
@@ -1028,11 +1252,13 @@ class TimeSeries(Data):
 
     @classmethod
     def read_csv(cls, path_file:str, data_type:str='cross', na:any='', index:str='index')->TimeSeries:
-        return super().read_csv(path_file, data_type, na, index)
+        data = Data.read_csv(path_file, data_type, na, index)
+        return data.to_timeseries()
 
     @classmethod
     def read_text(cls, path_file:str, data_type:str='cross', na:any='', index:str='index')->TimeSeries:
-        return super().read_text(path_file, data_type, na, index)
+        data = Data.read_text(path_file, data_type, na, index)
+        return data.to_timeseries()
 
     def select_variables(self, vars: list[str] = []) -> TimeSeries:
         res = super().select_variables(vars)
@@ -1125,3 +1351,8 @@ class TimeSeries(Data):
     def dropna(self, vars: list[str] = []) -> None:
         super().dropna(vars)
         self.reset_date_type()
+
+    @classmethod
+    def read_xls(cls, path_file:str, data_type:str='cross', index:str='index')->TimeSeries:
+        data = Data.read_xls(path_file, data_type, index)
+        return data.to_timeseries()

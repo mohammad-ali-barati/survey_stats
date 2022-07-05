@@ -20,6 +20,11 @@ Data:
 15. fillna() mathod can be a number that it's replace by na-s. 
 16. add line_plot() function
 17. read_csv from url
+new:
+18. strip values for read_csv and read_text
+19. add read_xls and to_xls functions
 
 TimeSeries:
-1- creation
+1. creation
+new:
+2. add 'curve' methon in to_month for seasonal data
