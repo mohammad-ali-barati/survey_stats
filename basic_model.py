@@ -398,7 +398,7 @@ class Variables:
                                 s2_2 += v2**2
                                 s_12 += v1 * v2
                                 n += 1
-                    if n==0:
+                    if n==0 or s2_1-(1/n)*s_1**2==0 or s2_2-(1/n)*s_2**2==0:
                         correl = np.nan
                     else:
                         correl = (s_12 - (1/n)*s_1*s_2)/((s2_1-(1/n)*s_1**2)*(s2_2-(1/n)*s_2**2))**0.5
@@ -487,7 +487,8 @@ class Variables:
 
     def __init__(self, var_list:list[Variable]=None) -> None:
         self.var_list = var_list
-        self.stats = Variables.__Stats(var_list)
+        var_names = [var.name for var in var_list]
+        self.stats = Variables.__Stats(var_names)
 
     def __str__(self) -> str:
         res = ''
@@ -2651,7 +2652,10 @@ class Formulas:
     def calculate_all(self, data:Data, weights:str='1', skip_collinear:bool=False)->Data:
         res = Data(data.type, {})
         for formula in self.formulas:
-            res.add_data(Formula(formula).calculate(data, weights, skip_collinear))
+            try:
+                res.add_data(Formula(formula).calculate(data, weights, skip_collinear))
+            except:
+                print(formula)
         return res
 
 class CountTable:

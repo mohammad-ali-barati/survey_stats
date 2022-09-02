@@ -12,29 +12,29 @@ class Model(ols.Model):
         new_formula = ''
         l = 0
         for formula in Formula(self.formula).split().formulas:
-            if  new_formula == '':
+            if new_formula == '':
                 if formula == '1':
                     new_formula += formula
                 for l in self.lags:
                     if new_formula == '':
                         new_formula += f'lag({self.dep_var},{l})'
                     else:
-                        new_formula += f' + lag({self.dep_var},{l})'
+                        new_formula += f'+lag({self.dep_var},{l})'
                 if formula != '1':
-                    new_formula += f' + {formula}'
+                    new_formula += f'+{formula}'
             else:
-                new_formula += f' + {formula}'
+                new_formula += f'+{formula}'
         self.formula = new_formula
     
-    def estimate(self, sample: Sample, do_print: bool = True):
-        eq = super().estimate(sample, do_print)
+    def estimate(self, sample: Sample, print_equation: bool = True):
+        eq = super().estimate(sample, print_equation)
         return Equation(eq.dep_var, self.lags, eq.indep_vars,
                     eq.indep_coefs, eq.cov_var_coefs,
                     eq.df, eq.mse, eq.r2,eq.r2adj,
                     eq.table, eq.sample)
     
-    def estimate_most_significant(self, sample: Sample, min_significant=1, do_print=True):
-        eq = super().estimate_most_significant(sample, min_significant, do_print)
+    def estimate_most_significant(self, sample: Sample, min_significant=1, print_equation=True):
+        eq = super().estimate_most_significant(sample, min_significant, print_equation)
         new_lags = []
         for var in eq.indep_vars:
             for lag in self.lags:
@@ -48,19 +48,22 @@ class Model(ols.Model):
                     eq.df, eq.mse, eq.r2,eq.r2adj,
                     eq.table, eq.sample)
     
-    def estimate_skip_collinear(self, sample: Sample, do_print: bool = True):
-        eq = super().estimate_skip_collinear(sample, do_print)
-        new_lags = []
-        for var in eq.indep_vars:
-            for lag in self.lags:
-                if f'lag({self.dep_var},{lag})' == var:
-                    new_lags.append(lag)
-                    break
-        self.lags = new_lags
-        return Equation(eq.dep_var, self.lags, eq.indep_vars,
-                    eq.indep_coefs, eq.cov_var_coefs,
-                    eq.df, eq.mse, eq.r2,eq.r2adj,
-                    eq.table, eq.sample)
+    def estimate_skip_collinear(self, sample: Sample, print_equation: bool = True, min_df:int=10, print_progress:bool=True):
+        try:
+            eq = super().estimate_skip_collinear(sample, print_equation, min_df, print_progress)
+            new_lags = []
+            for var in eq.indep_vars:
+                for lag in self.lags:
+                    if f'lag({self.dep_var},{lag})' == var:
+                        new_lags.append(lag)
+                        break
+            self.lags = new_lags
+            return Equation(eq.dep_var, self.lags, eq.indep_vars,
+                        eq.indep_coefs, eq.cov_var_coefs,
+                        eq.df, eq.mse, eq.r2,eq.r2adj,
+                        eq.table, eq.sample)
+        except Exception as e:
+            print(f'Error! dependent variable: {self.dep_var}, formula: {self.formula}. {e}')
 
 class Equation(ols.Equation):
     def __init__(self, dep_var: str, lags:int, indep_vars: list[str], 

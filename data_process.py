@@ -1,9 +1,14 @@
 from __future__ import annotations
+from contextlib import suppress
 import os, jdatetime
+import time
 from tkinter.ttk import Separator
 from attr import validate
 import numpy as np
 import urllib, csv
+from urllib.request import urlopen
+import requests
+
 
 from survey_stats.functions import *
 
@@ -25,58 +30,85 @@ class Data:
         self.values = values
     
     def __str__(self) -> str:
-        if len(self.variables())>=7:
-            vars = ['index'] + self.variables()[:3] + ['...'] + self.variables()[-2:] \
-                                if len(self.variables())>5 else self.variables()
-        else:
+        return self.to_str()
+
+    def to_str(self, variables:list=[], full_variables:bool=False,
+                     index:list=[], full_index:bool=False,
+                     decimals:int=4, formated:bool=True)->str:
+        #region vars
+        if variables!=[]:
+            vars = ['index'] + variables
+        elif full_variables or len(self.variables())<7:
             vars = ['index'] + self.variables()
-        inds = self.index()[:5] + ['⁝'] + self.index()[-3:] \
-                            if len(self.index()) > 15 else self.index()
-        width = 0
+        else: 
+            vars = ['index'] + self.variables()[:3] + ['...'] + self.variables()[-2:]
+        #endregion
+        #region inds
+        if index!=[]:
+            inds = index
+        elif full_index or len(self.index())<15:
+            inds = self.index()
+        else:
+            inds = self.index()[:10] + ['⁝'] + self.index()[-5:]
+        #endregion
+        #region widths[var]
+        widths = {}
+        for var in vars:
+            for i in inds:
+                if i!='⁝' and var!='...' and var!='index':
+                    if var in self.variables() and i in self.index():
+                        v = self.values[var][i]
+                        if formated:
+                            v = to_formated_str(v,decimals)
+                        else:
+                            v = str(v)
+                        if not var in widths.keys():
+                            widths[var] = max(len(v), len(str(var)))
+                        else:
+                            widths[var] = max(widths[var], len(v))
+                    elif not var in self.variables():
+                        raise ValueError(f"Error! '{var}' is not in variables.")
+                    elif not i in self.index():
+                        raise ValueError(f"Error! '{i}' is not in index.")
+                elif var=='index':
+                    if not var in widths.keys():
+                        widths[var] = len(str(i))
+                    else:
+                        widths[var] = max(widths[var], len(str(i)))
+                elif var=='...':
+                    if not var in widths.keys():
+                        widths[var] = 3
+                    else:
+                        widths[var] = max(widths[var], 3)
+            widths[var] += 4
+        #endregion
+        rows = f'type: {self.type}\n'
+        total_width = sum([widths[var] for var in vars])
+        #region title
+        rows += '\n ' + '-' * (total_width + len(vars)-1) + '\n|'
+        for var in vars:
+            rows += str(var).center(widths[var]) + '|'
+        #endregion
+        rows += '\n ' + '-' * (total_width + len(vars)-1)
+        #region values
         for i in inds:
             for var in vars:
-                try:
-                    val = '⁝' if i=='⁝' else self.values[var][i] \
-                            if var != 'index' and var != '...' else var
-                except:
-                    print(self.values[var][i])
-                if is_numeric(val):
-                    val = str(round(val,4))
-                width = max(width, len(str(var)), len(val), len(str(i)))
-        width = min(width, 20)
-        #endregion
-        #region title
-        title = 'type: ' + self.type + '\n'
-        title += ' ' + '-'*(len(vars)*(width+1)-1) + '\n'
-        title += ''
-        for var in vars:
-            title += '|' + str(var)[:20].center(width)
-        title += '|\n'
-        title += ' ' + '-'*(len(vars)*(width+1)-1) + '\n'
-        #endregion
-        #region rows
-        rows = title
-        for i in inds:
-            for j, var in enumerate(vars):
-                if i != '⁝':
-                    if j==0:
-                        rows += '|' + str(i)[:20].center(width)
-                    elif var == '...':
-                        rows += '|' + '...'.center(width)
+                if var == 'index':
+                    rows += '\n|' + str(i).center(widths[var]) + '|'
+                elif var == '...':
+                    rows += '...'.center(widths['...']) + '|'
+                elif i in self.index():
+                    v = self.values[var][i]
+                    if formated:
+                        v = to_formated_str(v,decimals)
                     else:
-                        x = self.values[var][i]
-                        if is_numeric(x):
-                            x = str(round(x,4))
-                        rows += '|' + str(x)[:20].center(width)
-                else:
-                    if var == '...':
-                        rows += '|' +str('˙·.')[:20].center(width)
-                    else:
-                        rows += '|' + str(i)[:20].center(width)
-            rows += '|\n'
-        rows +=  ' ' + '-'*(len(vars)*(width+1)-1) + '\n'
-        rows += f'{len(self.index())} × {len(self.variables())}'
+                        v = str(v)
+                    rows += v.center(widths[var]) + '|'
+                elif i == '⁝':
+                    rows += '⁝'.center(widths[var]) + '|'
         #endregion
+        rows += '\n ' + '-' * (total_width + len(vars)-1)
+        rows += f'\n{len(self.index())} × {len(self.variables())}'
         return rows
 
     def variables(self) -> None:
@@ -222,8 +254,16 @@ class Data:
                     except:
                         pass
 
+    def value_to_nan(self, value:str|int|float, variables:list[str]=[])->None:
+        if variables == []:
+            variables = self.variables()
+        for var in variables:
+            for i in self.index():
+                if self.values[var][i] == value:
+                    self.values[var][i] = np.nan
+
     def to_numpy(self, vars:list[str]=[])->None:
-        self.dropna(vars)
+        # self.dropna(vars)
         lst = []
         for i in self.index():
             in_lst = []
@@ -258,7 +298,8 @@ class Data:
             if not var in old_vars:
                 self.values[var] = dict(zip(indexes,[np.nan]*len(indexes)))
             if var in new_vars:
-                self.values[var].update(new_data.values[var])
+                new_values = {i:v for i,v in new_data.values[var].items() if not is_nan(v)}
+                self.values[var].update(new_values)
             elif new_index != []:
                 new_vals = dict(zip(new_index,[np.nan]*len(new_index)))
                 self.values[var].update(new_vals)
@@ -276,7 +317,7 @@ class Data:
     @classmethod
     def read_csv(cls, path_file:str, data_type:str='cross', na:any='', index:str='index')->Data:
         if path_file[:4].lower()=='http':
-            response = urllib.request.urlopen(path_file)
+            response = urlopen(path_file)
             lines = [l.decode('utf-8') for l in response.readlines()]
             cr = csv.reader(lines)
             values, vars, is_first = {}, [], True
@@ -315,6 +356,8 @@ class Data:
         data = cls(data_type, values)
         if index in vars:
             data.set_index(index)
+        elif 'index' in vars:
+            data.set_index('index')
         return data
 
     def to_csv(self, path_file:str, na:str='', replace:bool = True, skip_index:bool=False):
@@ -378,10 +421,12 @@ class Data:
                 self.values[variable + '_'] = {}
             while j < n:
                 v = self.values[variable][index[j]]
-                if not is_numeric(v):
-                    raise ValueError(f"Error! value of '{v}' in variable '{variable}' is not numeric.")
                 try:
-                    if np.isnan(v):
+                    is_nan = False
+                    if is_numeric(v):
+                        if np.isnan(v):
+                            is_nan = True
+                    if is_nan:
                         if method == 'last':
                             if not replace:
                                 self.values[variable + '_'][index[j]] = last_value
@@ -480,8 +525,8 @@ class Data:
                         last_value = v
                     j += 1
                 except:
-                    raise ValueError(f"Error! value of '{v}' in variable '{variable}'.")
-        elif type(validate)==list:
+                    raise ValueError(f"Error! value of '{v}' in variable '{variable}', index = {index[j]}.")
+        elif type(variables)==list:
             if variables == []:
                 variables = self.variables()
             for var in variables:
@@ -537,6 +582,8 @@ class Data:
         data = cls(data_type, values)
         if index in vars:
             data.set_index(index)
+        elif 'index' in vars:
+            data.set_index('index')
         return data
 
     def to_text(self, path_file:str, na:str='', replace:bool = True, skip_index:bool=False, seprator:str=','):
@@ -592,7 +639,9 @@ class Data:
             raise ValueError(f"Error! lenght of values ({len(values)}) must be equal to lenght of index ({len(self.index())}).")
 
     def to_timeseries(self):
-        return TimeSeries('time', self.values)
+        data = TimeSeries('time', self.values)
+        data.complete_dates()
+        return data
 
     def line_plot(self, vars:list[str]):
         from matplotlib import pyplot as plt
@@ -611,39 +660,36 @@ class Data:
 
     @classmethod
     def read_xls(cls, path_file: str, data_type:str='cross', na:any='', index:str='index') -> Data:
-        from bs4 import BeautifulSoup
-
-        if 'http:\\' in path_file or 'https:\\' in path_file:
-            import requests
-            content = requests.get(path_file).text
+        if 'http://' in path_file or 'https://' in path_file:
+            try:
+                content = requests.get(path_file).text
+            except:
+                import urllib3
+                urllib3.disable_warnings()
+                content = requests.get(path_file, allow_redirects=True, verify=False).text
         else:
             with open(path_file, encoding='utf8') as f:
                 content = f.read()
-        soup = BeautifulSoup(content, 'html.parser')
-
-        #titles
-        titles = [tag.text.strip() for tag in soup.find('thead').find_all('th')]
-        #values
-        rows = soup.find('tbody').find_all('tr')
+        rows = xls_read(content)
+        titles = rows[0]
         values, i = {}, 0
-        for row in rows:
-            cols = row.find_all('th')
+        for row in rows[1:]:
+            cols = row
             i += 1
             val = {}
             for j, col in enumerate(cols):
-                vali = col.text
-                if vali != '':
-                    if is_numeric_str(vali):
-                        vali = to_float(vali)
-                    elif vali == na:
-                        vali = np.nan
-                    else:
-                        vali = vali.strip()
+                vali = col
+                if is_numeric_str(vali):
+                    vali = to_float(vali)
+                elif vali == na:
+                    vali = np.nan
                 val[titles[j]] = vali
             values[i] = val
         res = cls(data_type, values).transpose()
-        if index != 'index' or index in titles:
+        if index in titles:
             res.set_index(index)
+        elif 'index' in titles:
+            res.set_index('index')
         return res
 
     def to_xls(self,  path_file:str, na:str='', replace:bool = True, skip_index:bool=False):
@@ -701,8 +747,45 @@ class Data:
             </table>
         </html>
         '''
+        if os.path.exists(path_file):
+            if replace:
+                os.remove(path_file)
+            else:
+                raise ValueError(f"Error! '{path_file.split('/')[-1]}' exists.")
         with open(path_file, 'w', encoding='utf8') as f:
             f.write(data)
+
+    @classmethod
+    def read_excel(cls, path_file:str, sheet:str='', data_type:str='cross', na:any='', index:str='index',
+                    first_row:int=0, first_col:int=0) -> Data:
+        import xlrd
+        wb = xlrd.open_workbook(path_file)
+        if sheet != '':
+            ws = wb.sheet_by_name(sheet)
+        else:
+            ws = wb.sheet_by_index(0)
+        i = first_row
+        values = {}
+
+        j = 1
+        var_names = {}
+        for col in range(first_col, ws.ncols):
+            var_name = ws.cell(first_row, col).value
+            if var_name == '':
+                var_name = f'var{j}'
+                j += 1
+            var_names[col] = var_name
+            values[var_name] = {}
+        for row in range(first_row+1,ws.nrows):
+            for col in range(first_col, ws.ncols):
+                val = ws.cell(row, col).value
+                if val == '':
+                    val = np.nan
+                values[var_names[col]][row-first_row] = val
+        data = Data(data_type, values)
+        if index in data.variables():
+            data.set_index(index)
+        return data
 
 class Sample:
     def __init__(self, data: Data, index:list=[], name:str=None, weights:str='1') -> None:
@@ -814,12 +897,12 @@ class Sample:
     def __str__(self) -> str:
         return str(self.get_data())
 
-
 class TimeSeries(Data):
     types = ['daily', 'weekly', 'monthly', 'seasonal', 'annual']
     @staticmethod
     def str_to_date(date:str)->jdatetime.date:
         seprator = '-' if len(date.split('-')) != 1 else '/' if len(date.split('/')) != 1 else ''
+
         if seprator == '':
             raise ValueError(f"Error! seprator are not standard: '-' or '/'.")
         if len(date.split(seprator))!=3:
@@ -851,9 +934,12 @@ class TimeSeries(Data):
                     raise ValueError(f"Error! dates have two parts (they are monthly or seasonal), but probably one date is different from other dates., it has one or more than two parts.")
             elif len(splits) == 3:
                 try:
-                    # for date in sorted(dates):
-                    #     jdatetime.date(*[int(p) for p in date.split(seprator)])
-                    sorted_dates = [jdatetime.date(*[int(p) for p in date.split(seprator)]) for date in sorted(dates)]
+                    sorted_dates = []
+                    for date in sorted(dates):
+                        seprator = '-' if len(date.split('-')) != 1 else '/' if len(date.split('/')) != 1 else ''
+                        if seprator == '':
+                            raise ValueError(f"Error! date {date} seprator are not standard: '-' or '/'.")
+                        sorted_dates.append(jdatetime.date(*[int(p) for p in date.split(seprator)]))
                     difs = set([(sorted_dates[i]-sorted_dates[i-1]).days for i in range(1,len(sorted_dates))])
                     weekly = True
                     for dif in difs:
@@ -878,48 +964,91 @@ class TimeSeries(Data):
 
     def complete_dates(self):
         if self.dates != []:
-            start_dates, end_dates = min(self.dates), max(self.dates)
-            date, from_end = start_dates, 1
-            if self.date_type != 'annual':
-                seprator = '-' if len(date.split('-')) != 1 else '/' if len(date.split('/')) != 1 else ''
+            dates = []
+            for date in self.dates:
+                seprator = '/' if '/' in date else '-' if '-' in date else ''
                 if seprator == '':
-                    raise ValueError(f"Error! seprator are not standard: '-' or '/'.")
-            new_values = {}
-            while from_end>=0:
-                for var in self.values.keys():
-                    if not var in new_values.keys():
-                        new_values[var] = {}
-                    if date in self.values[var].keys():
-                        new_values[var][date] = self.values[var][date]
-                    else:
-                        new_values[var][date] = np.nan
-                if self.date_type == 'daily':
-                    date = TimeSeries.str_to_date(date) + jdatetime.timedelta(1)
-                    from_end = (TimeSeries.str_to_date(end_dates)-date).days
-                    date = str(date).replace('-',seprator) if seprator == '/' else str(date)
-                elif self.date_type == 'weekly':
-                    date = TimeSeries.str_to_date(date) + jdatetime.timedelta(7)
-                    from_end = (TimeSeries.str_to_date(end_dates)-date).days
-                    date = str(date).replace('-',seprator) if seprator == '/' else str(date)
-                elif self.date_type == 'monthly':
-                    end_year, end_month = [int(p) for p in end_dates.split(seprator)]
-                    year, month = [int(p) for p in date.split(seprator)]
-                    date = f'{year}-0{month+1}' if month<9 else f'{year}-{month+1}' if month<12 else f'{year+1}-01'
-                    if seprator == '/':
-                        date = date.replace('-', '/')
-                    from_end = end_year*12+end_month-year*12-month-1
-                elif self.date_type == 'seasonal':
-                    end_year, end_season = [int(p) for p in end_dates.split(seprator)]
-                    year, season = [int(p) for p in date.split(seprator)]
-                    date = f'{year}-{season+1}' if season<4 else f'{year+1}-1'
-                    if seprator == '/':
-                        date = date.replace('-', '/')
-                    from_end = end_year*4+end_season-year*4-season-1
-                elif self.date_type == 'annual':
-                    date += 1
-                    from_end = end_dates-date
-                else:
-                    raise ValueError(f"Error! date_type '{self.date_type}' most be daily, weekly, monthly, seasonal, or annual")
+                    raise ValueError(f"Error! seprator must be '-' or '/'.")
+                sp = [f'0{int(x)}' if int(x) < 10 else f'{int(x)}' 
+                        for x in date.split(seprator)]
+                date = '-'.join(sp)
+                dates.append(date)
+            dates.sort()
+            start_dates, end_dates = dates[0], dates[-1]
+            new_values, dates = {}, []
+            if self.date_type in ['daily', 'weekly']:
+                sp = '-' if len(start_dates.split('-')) == 3 else '/' if len(start_dates.split('/')) == 3 else ''
+                if sp == '':
+                    raise ValueError(f'Error! seprator only must be - or /.')
+                delta = 1 if self.date_type == 'daily' else 7
+
+                start_dates, end_dates = [TimeSeries.str_to_date(date) for date in [start_dates, end_dates]]
+                date = start_dates
+                dates = []
+                while (end_dates-date).days>=0:
+                    new_date = date.strftime('%Y-%m-%d')
+                    m = f'{date.month}' if date.month > 9 else f'0{date.month}'
+                    d = f'{date.day}' if date.day > 9 else f'0{date.day}'
+                    old_dates = [
+                                f'{date.year}-{date.month}-{date.day}',
+                                 f'{date.year}-{m}-{date.day}', 
+                                 f'{date.year}-{date.month}-{d}', 
+                                 f'{date.year}-{m}-{d}', 
+                                f'{date.year}/{date.month}/{date.day}',
+                                 f'{date.year}/{m}/{date.day}', 
+                                 f'{date.year}/{date.month}/{d}', 
+                                 f'{date.year}/{m}/{d}'
+                                 ]
+                    dates.append(new_date)
+                    
+                    for var in self.values.keys():
+                        if not var in new_values.keys():
+                            new_values[var] = {}
+                        new_values[var][new_date] = np.nan
+                        for old_date in old_dates:
+                            if old_date in self.values[var].keys():
+                                new_values[var][new_date] = self.values[var][old_date]
+                    date = date + jdatetime.timedelta(delta)
+            elif self.date_type in ['monthly', 'seasonal']:
+                sp = '-' if len(start_dates.split('-')
+                                ) == 2 else '/' if len(start_dates.split('/')) == 2 else ''
+                if sp == '':
+                    raise ValueError(f'Error! seprator only must be - or /.')
+                n = 13 if self.date_type=='monthly' else 5
+                ystart, mstart = [int(p) for p in start_dates.split(sp)]
+                yend, mend = [int(p) for p in end_dates.split(sp)]
+                for y in range(ystart, yend+1):
+                    st = mstart if y == ystart else 1
+                    en = mend+1 if y==yend else n
+                    for m in range(st, en):
+                        mstr = f'{m}' if m>9 else f'0{m}'
+                        new_date = f'{y}-{mstr}'
+                        old_dates = [f'{y}-{mstr}', f'{y}-{m}']
+                        dates.append(new_date)
+                        for var in self.values.keys():
+                            if not var in new_values.keys():
+                                new_values[var] = {}
+                            new_values[var][new_date] = np.nan
+                            for date in old_dates:
+                                if date in self.values[var].keys():
+                                    new_values[var][new_date] = self.values[var][date]
+            elif self.date_type != 'annual':
+                if not (is_numeric(start_dates) or is_numeric(end_dates)):
+                    raise ValueError(f"Error! annual dates must be numeric.")
+                for y in range(start_dates, end_dates+1):
+                    dates.append(y)
+                    for var in self.values.keys():
+                        if not var in new_values.keys():
+                            new_values[var] = {}
+                        if y in self.values[var].keys():
+                            new_values[var][y] = self.values[var][y]
+                        else:
+                            new_values[var][y] = np.nan
+            else:
+                raise ValueError(
+                    f"Error! date_type '{self.date_type}' most be daily, weekly, monthly, seasonal, or annual")
+                
+            self.dates = dates
             self.values = new_values
 
     def reset_date_type(self):
@@ -958,46 +1087,118 @@ class TimeSeries(Data):
 
     def to_monthly(self, method:str, farvardin_adj:bool=False)->TimeSeries:
         if self.date_type == 'daily':
-            values = {}
+            #region sums and counts for months
+            sums, counts = {}, {}
             for var in self.variables():
-                values[var] = {}
-                last_month = ''
+                sums[var], counts[var] = {}, {}
                 for day in self.dates:
-                    seprator = '-' if len(day.split('-')) != 1 else '/' if len(day.split('/')) != 1 else ''
-                    if seprator == '':
-                        raise ValueError(f"Error! seprator are not standard: '-' or '/'.")
-                    if len(day.split(seprator))==3:
-                        y,m,d = [int(x) for x in day.split(seprator)]
-                        month = f'{y}-{m}' if m > 9 else f'{y}-0{m}'
-                        if month != last_month:
-                            summation, last_value, count = 0, np.nan, 0
-                        last_month = month
-                        value = self.values[var][day]
-                        is_nan_value = False
-                        if is_numeric(value):
-                            if np.isnan(value):
-                                is_nan_value = True
-                        if not is_nan_value:
-                            summation += value
-                            count += 1
-                            last_value = value
+                    v = self.values[var][day]
+
+                    sep = '-' if '-' in day else '/' if '/' in day else ''
+                    if sep == '':
+                        raise ValueError(
+                            f"Error! {day} in variable {var} isn't standard. seprator must be '-' or '/'.")
+                    if len(day.split(sep)) != 3:
+                        raise ValueError(f"Error! {day} in variable {var} isn't standard. day must has 3 part.")
+                    y, m, d = [int(x) for x in day.split(sep)]
+                    month = f'{y}-{m}' if m>9 else f'{y}-0{m}'
+
+                    if not is_nan(v, is_number=True):
+                        if month in sums[var].keys():
+                            sums[var][month] += v
+                            counts[var][month] += 1
                         else:
-                            is_nan_last_value = False
-                            if is_numeric(last_value):
-                                if np.isnan(last_value):
-                                    is_nan_last_value = True
-                            if not is_nan_last_value:
-                                summation += last_value
-                                count += 1
-                        if count>0:
-                            values[var][month] = summation / count if method=='average' else summation
-                        elif not month in values[var].keys():
-                            values[var][month] = np.nan
-                    else:
-                        raise ValueError(f"Error! '{day}' is not a standard format of daily date like yyyy-mm-dd.")
-            res = TimeSeries('time', values)
-            res.reset_date_type()
-            res.complete_dates()
+                            sums[var][month] = v
+                            counts[var][month] = 1
+            #endregion
+            #region average
+            if method == 'average':
+                start = True
+                for var in self.variables():
+                    for month in sums[var].keys():
+                        if start:
+                            month_start, month_end, start = month, month, False
+                        else:
+                            month_start, month_end = min(month_start, month), max(month_end, month)
+                        sums[var][month] /= counts[var][month]
+            #endregion
+            #region complete keys
+            def next_month(month:str)->str:
+                sep = '-' if '-' in month else '/' if '/' in month else ''
+                if sep == '':
+                    raise ValueError(
+                        f"Error! {month} isn't standard. seprator must be '-' or '/'.")
+                if len(month.split(sep)) != 2:
+                        raise ValueError(f"Error! {month} isn't standard. month must has 2 part.")
+                y, m = [int(x) for x in month.split(sep)]
+                return f'{y+1}-01' if m==12 else f'{y}-{m+1}' if m+1>9 else f'{y}-0{m+1}'
+            
+            month = month_start
+            while month <= month_end:
+                for var in self.variables():
+                    if not month in sums[var].keys():
+                        sums[var][month] = np.nan
+                month = next_month(month)
+            #endregion
+            
+            res = TimeSeries('time', sums)
+            res.sort()
+
+            #region edit last month
+            for var in self.variables():
+                for month in res.dates[::-1]:
+                    v = res.values[var][month]
+                    if not is_nan(v, is_number=True):
+                        month_end = month
+                        break
+                sep = '-' if '-' in month else '/'
+                y, m = [int(x) for x in month_end.split(sep)]
+                if m == 12:
+                    no_days = (jdatetime.date(y+1, 1, 1) - jdatetime.date(y, m, 1)).days
+                else:
+                    no_days = 31 if m<7 else 30
+                s0 = 0
+                lag = 1
+                while s0 == 0:
+                    s, n, s0, n0 = 0, 0, 0, 0
+                    for d in range(1, no_days+1):
+                        m_str = f'{m}' if m>9 else f'0{m}'
+                        d_str = f'{d}' if d>9 else f'0{d}'
+                        day = f'{y}-{m_str}-{d_str}'
+                        if m>lag:
+                            m_str0 = f'{m-lag}' if m-lag>9 else f'0{m-lag}'
+                            day0 = f'{y}-{m_str0}-{d_str}'
+                            month_last = f'{y}-{m_str0}'
+                        else:
+                            o = y*12+m-lag
+                            y_lag, m_lag = (o-1)//12, o - ((o-1)//12)*12
+                            m_str0 = f'{m_lag}' if m_lag > 9 else f'0{m_lag}'
+                            day0 = f'{y_lag}-{m_str0}-{d_str}'
+                            month_last = f'{y_lag}-{m_str}'
+                        d0 = d
+                        while not day0 in self.dates and d0>0:
+                            d0 -= 1
+                            d_str = f'{d0}' if d0 > 9 else f'0{d0}'
+                            day0 = day0[:8] + d_str
+                        if day in self.dates:
+                            v = self.values[var][day]
+                            v0 = self.values[var][day0]
+                            if not is_nan(v, is_number=True):
+                                s += v
+                                n += 1
+                            if not is_nan(v0, is_number=True):
+                                s0 += v0
+                                n0 += 1
+                        else:
+                            break
+                    lag += 1
+                if method=='average':
+                    res.values[var][month_end] = (s*n0/(n*s0)) * res.values[var][month_last]
+                else:
+                    res.values[var][month_end] = (s/s0) * res.values[var][month_last]
+
+            #endregion
+
             return res
         elif self.date_type == 'weekly':
             values = {}
@@ -1150,11 +1351,11 @@ class TimeSeries(Data):
                                 coefs_arr[i][j] = 0
                             const_vec[i][0] = self.values[var][dates[-1]]
                     #endregion
+                    values_arr = np.matmul(np.linalg.inv(coefs_arr), const_vec)
+                    values_lst = list([float(x[0]) for x in values_arr])
+                    values_dict = dict(zip(month_dates, values_lst))
                     #region adjusted farvardins
                     if farvardin_adj:
-                        values_arr = np.matmul(np.linalg.inv(coefs_arr), const_vec)
-                        values_lst = list([float(x[0]) for x in values_arr])
-                        values_dict = dict(zip(month_dates, values_lst))
                         for date in dates:
                             year, season = [int(x) for x in date.split('-')]
                             if season == 1:
@@ -1171,7 +1372,6 @@ class TimeSeries(Data):
                                 values_dict[f'{year}-03'] = m03 * total / (m01+m02+m03)
                     #endregion
                     values[var] = values_dict
-                
             else:
                 values = {}
                 start_year, start_season = [int(x) for x in self.dates[0].split('-')]
@@ -1250,6 +1450,41 @@ class TimeSeries(Data):
         elif self.date_type == 'annual':
             pass    #TODO
 
+    def to_weekly(self, method:str='average')->TimeSeries:
+        if self.date_type == 'daily':
+            values = {}
+            for var in self.variables():
+                values[var] = {}
+                w, start = 0, True
+                for date in self.dates:
+                    sep = '-'
+                    y,m,d = [int(x) for x in date.split(sep)]
+                    jdate = jdatetime.date(y, m, d)
+                    weekday = jdate.weekday()
+                    v = self.values[var][date]
+                    if weekday == 0:
+                        w += 1
+                        if not is_nan(v, is_number=True):
+                            s, n = v, 1
+                        else:
+                            s, n = 0, 0
+                        start = False
+                    elif not start:
+                        if not is_nan(v, is_number=True):
+                            s += v
+                            n += 1
+                        if weekday == 6:
+                            if n == 0:
+                                values[var][date] = np.nan
+                            else:
+                                values[var][date] = s/n if method=='average' else s
+                endweek = (jdate + jdatetime.timedelta(6-weekday)).strftime('%Y-%m-%d')
+                if n == 0:
+                    values[var][endweek] = np.nan
+                else:
+                    values[var][endweek] = s/n if method == 'average' else s
+            return TimeSeries('time', values)
+
     @classmethod
     def read_csv(cls, path_file:str, data_type:str='cross', na:any='', index:str='index')->TimeSeries:
         data = Data.read_csv(path_file, data_type, na, index)
@@ -1268,7 +1503,7 @@ class TimeSeries(Data):
         res = super().select_index(index)
         return TimeSeries('time', res.values)
 
-    def add_data(self, new_data: Data = None) -> Data:
+    def add_data(self, new_data: Data = None) -> TimeSeries:
         super().add_data(new_data)
         self.sort()
         self.dates = self.index()
@@ -1353,6 +1588,81 @@ class TimeSeries(Data):
         self.reset_date_type()
 
     @classmethod
-    def read_xls(cls, path_file:str, data_type:str='cross', index:str='index')->TimeSeries:
-        data = Data.read_xls(path_file, data_type, index)
-        return data.to_timeseries()
+    def read_xls(cls, path_file:str, data_type:str='cross', na:any='', index:str='index')->TimeSeries:
+        data = Data.read_xls(path_file, data_type, na, index)
+        data = data.to_timeseries()
+        return data
+
+    @classmethod
+    def read_excel(cls, path_file:str, sheet:str='', data_type:str='cross', na:any='', index:str='index',
+                    first_row:int=0, first_col:int=0)->TimeSeries:
+        data = Data.read_excel(path_file, sheet, data_type, na, index, first_row, first_col)
+        data = data.to_timeseries()
+        return data
+        
+    def sort(self, key:str='', ascending:bool=True):
+        super().sort(key, ascending)
+        self.dates.sort()
+
+    def add_index(self, index: list):
+        super().add_index(index)
+        self.dates = self.index()
+        self.complete_dates()
+
+    def to_growth(self, vars:list[str]=[], lag:int=1, is_average:bool=False, 
+                    complete_dates:bool=False, print_progress:bool=True)->TimeSeries:
+        if vars==[]:
+            vars = self.variables()
+        else:
+            vars = [var for var in vars if var in self.variables()]
+        if complete_dates:
+            self.complete_dates()
+        if print_progress:
+            start_time = time.perf_counter()
+        values, v = {}, 0
+        for var in vars:
+            v += 1
+            values[var] = {}
+            for i in range(len(self.dates)):
+                if not is_average:
+                    if not (is_nan(self.values[var][self.dates[i-lag]], True) or 
+                            is_nan(self.values[var][self.dates[i]], True)):
+                        if self.values[var][self.dates[i-lag]] != 0:
+                            if self.dates[i] == '1401-05-28' and var == 'gold-irr':
+                                print((self.values[var][self.dates[i]] /
+                                       self.values[var][self.dates[i-lag]])-1)
+                            values[var][self.dates[i]] = (self.values[var][self.dates[i]]/
+                                                self.values[var][self.dates[i-lag]])-1
+                        else:
+                            values[var][self.dates[i]] = np.nan
+                    else:
+                        values[var][self.dates[i]] = np.nan
+                else:
+                    s, s_lag = 0, 0
+                    n, n_lag = 0, 0
+                    for l in range(lag):
+                        if is_nan(self.values[var][self.dates[i-l]]):
+                            s += self.values[var][self.dates[i-l]]
+                            n += 1
+                        if is_nan(self.values[var][self.dates[i-lag-l]]):
+                            s_lag += self.values[var][self.dates[i-lag-l]]
+                            n_lag += 1
+                    if n!=0 and n_lag!=0:
+                        values[var][self.dates[i]] = (s/n)/(s_lag/n_lag)-1
+                    else:
+                        values[var][self.dates[i]] = np.nan
+                if print_progress:
+                    left_time = time.perf_counter() - start_time
+                    total_time = left_time * (len(vars)*len(self.dates))/((v-1)*len(self.dates)+i+1)
+                    remain_time = total_time-left_time
+                    left_time = seconds_to_days_hms(left_time)
+                    remain_time = seconds_to_days_hms(remain_time)
+                    print(f"{v} of {len(vars)} variables ({v/len(vars)*100:.2f}%) and {i+1} of {len(self.dates)} dates of {var} ({(i+1)/len(self.dates)*100:.2f}%). left: {left_time}, remain: {remain_time}.", end='\r')
+        if print_progress:
+            print('All growths are calculated', ' '*80)
+        data = TimeSeries(values=values)
+        data.complete_dates()
+        return data
+
+
+
