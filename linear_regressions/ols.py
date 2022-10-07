@@ -96,7 +96,6 @@ class Model:
                 data.add_data(dep_num)
                 if sample.weights != '1':
                     w_num = sample.data.select_variables([sample.weights])
-                    data.add_data(w_num)
                     data.dropna()
                     w_num = data.select_variables([sample.weights])
                     dep_num = data.select_variables([self.dep_var])
@@ -116,6 +115,7 @@ class Model:
                             x_y = np.dot(x_arr.T, y_arr)
                             # coeficient vector
                             indep_coefs = np.dot(x_x_inv, x_y)
+                            
                             # ANOVA
                             tss = float(np.dot(y_arr.T,y_arr)-(np.sum(y_arr)**2)/len(y_arr))
                             df_total = y_arr.shape[0] - 1
@@ -124,7 +124,9 @@ class Model:
                             yf = np.dot(x_arr, indep_coefs)
                             rss = float(np.dot(yf.T,yf)-(np.sum(yf)**2)/len(yf))
                             df_reg = x_arr.shape[1] - 1
-                            msr = rss/df_reg
+                            # if df_reg==0:
+                            #     print(indep_coefs)
+                            # msr = rss/df_reg
 
                             ess = tss - rss
                             df_err = df_total - df_reg
@@ -296,7 +298,8 @@ class Model:
                 raise ValueError(f"Error! there isn't any model with minimum significant of {min_significant}.")
 
     def estimate_most_significant(self, sample:Sample, min_significant = 1, print_equation = True):
-        return Model.__most_significant(self.dep_var, self.formula, sample, min_significant, print_equation)
+        eq = Model.__most_significant(self.dep_var, self.formula, sample, min_significant, print_equation)
+        return eq
         
 class Equation:
     def __init__(self, dep_var:str, indep_vars:list[str], indep_coefs:list[float], 

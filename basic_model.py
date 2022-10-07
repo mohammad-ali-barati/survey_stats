@@ -2599,7 +2599,7 @@ class Formula:
                     else:
                         raise ValueError(f"Error! variable '{splits}' is not in data.")
         return Formula.__calculate(splits, data, weights, skip_collinear)
-        
+    
     def split(self)->Formulas:
         formulas = []
         self_formula = self.formula.strip()
@@ -2645,18 +2645,69 @@ class Formula:
                     values[var][i] = data.values[var][i]
         return Data(data.type, values)
 
+    def calculateB(self, data:Data):
+        res = {self.formula:{}}
+        vars = data.variables()
+        vars.sort(key=lambda v: len(v), reverse=True)
+        for i in data.index():
+            f = self.formula
+            isnan = False
+            for var in vars:
+                if var in f and np.isnan(data.values[var][i]):
+                    isnan = True
+                    break
+                f = f.replace(var, str(data.values[var][i]))
+            if isnan:
+                res[self.formula][i] = np.nan
+            else:
+                res[self.formula][i] = eval(f)
+        return Data(values = res)
+
+
 class Formulas:
     def __init__(self, formulas:list[str]) -> None:
         self.formulas = formulas
     
-    def calculate_all(self, data:Data, weights:str='1', skip_collinear:bool=False)->Data:
+    def calculate_all(self, data:Data, weights:str='1', skip_collinear:bool=False,
+                    print_progress:bool=False)->Data:
         res = Data(data.type, {})
-        for formula in self.formulas:
+        if print_progress:
+            start_time = time.perf_counter()
+        for i,formula in enumerate(self.formulas):
             try:
                 res.add_data(Formula(formula).calculate(data, weights, skip_collinear))
-            except:
-                print(formula)
+            except Exception as e:
+                if print_progress:
+                    print(f'Error in {formula}. {e}')
+            if print_progress:
+                left_time = time.perf_counter()-start_time
+                total_time = left_time*len(self.formulas)/(i+1)
+                remain_time = total_time-left_time
+                print(f"{i+1}'th of {len(self.formulas)} formulas are calculated ({(i+1)/len(self.formulas)*100:.1f}%). left time: {seconds_to_days_hms(left_time)}. remain time: {seconds_to_days_hms(remain_time)}.", end='\r')
+        if print_progress:
+            print()
         return res
+
+    def calculate_allB(self, data:Data, weights:str='1', skip_collinear:bool=False,
+                    print_progress:bool=False)->Data:
+        res = Data(data.type, {})
+        if print_progress:
+            start_time = time.perf_counter()
+        for i,formula in enumerate(self.formulas):
+            try:
+                res.add_data(Formula(formula).calculateB(data))
+            except Exception as e:
+                if print_progress:
+                    print(f'Error in {formula}. {e}')
+            if print_progress:
+                left_time = time.perf_counter()-start_time
+                total_time = left_time*len(self.formulas)/(i+1)
+                remain_time = total_time-left_time
+                print(f"{i+1}'th of {len(self.formulas)} formulas are calculated ({(i+1)/len(self.formulas)*100:.1f}%). left time: {seconds_to_days_hms(left_time)}. remain time: {seconds_to_days_hms(remain_time)}.", end='\r')
+        if print_progress:
+            print()
+        return res
+
 
 class CountTable:
     def __init__(self, sample:Sample, row1:list[str], row2:list[str]=[], column:list[str]=[]) -> None:

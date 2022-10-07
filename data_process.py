@@ -111,7 +111,7 @@ class Data:
         rows += f'\n{len(self.index())} × {len(self.variables())}'
         return rows
 
-    def variables(self) -> None:
+    def variables(self) -> list:
         return [var for var in self.values]
 
     def index(self, without_checking:bool=True) -> None:
@@ -187,6 +187,11 @@ class Data:
         for var in var_names:
             if var in self.values.keys():
                 self.values.pop(var)
+
+    def drop_index(self, index:list):
+        for var in self.variables():
+            for i in index:
+                self.values[var].pop(i)
 
     def add_a_dummy(self, condition:list[list[tuple]], add_to_data:bool=False)->None:
         # condition = [('sex','=','female'), ('age','<',20)]
@@ -787,6 +792,18 @@ class Data:
             data.set_index(index)
         return data
 
+    def addna(self, value:str|int|float='', variables:str|list[str]=[]):
+        if not type(variables) in [str, list]:
+            raise ValueError(f"Error! type of {variables} is {type(variables)}. It must be 'str' or 'list'.")
+        if type(variables)==str:
+            variables = [variables]
+        if variables == []:
+            variables = self.variables()
+        for var in variables:
+            for i in self.index():
+                if self.values[var][i]==value:
+                    self.values[var][i] = np.nan
+
 class Sample:
     def __init__(self, data: Data, index:list=[], name:str=None, weights:str='1') -> None:
         self.data = data
@@ -1073,6 +1090,7 @@ class TimeSeries(Data):
                 raise ValueError(f"Error! {var} is not in variables of data.")
         elif type(var)==list:
             if len(var) == len(self.index()):
+                date_types = TimeSeries.type_of_dates(var)
                 for v in self.values.keys():
                     values = {}
                     for i, value in enumerate(self.values[v].values()):
@@ -1085,6 +1103,7 @@ class TimeSeries(Data):
         self.reset_date_type()
         self.complete_dates()
 
+    monthly_methods = ['average', 'sum', 'curve']
     def to_monthly(self, method:str, farvardin_adj:bool=False)->TimeSeries:
         if self.date_type == 'daily':
             #region sums and counts for months
@@ -1248,7 +1267,7 @@ class TimeSeries(Data):
             if method == 'curve':
                 #region Type Error
                 if self.date_type != 'seasonal':
-                    raise ValueError(f"Error! 'cureve' method only work on 'seanonal' data types.")
+                    raise ValueError(f"Error! 'curve' method only work on 'seanonal' data types.")
                 #endregion
                 values = {}
                 for var in self.variables():
@@ -1628,9 +1647,6 @@ class TimeSeries(Data):
                     if not (is_nan(self.values[var][self.dates[i-lag]], True) or 
                             is_nan(self.values[var][self.dates[i]], True)):
                         if self.values[var][self.dates[i-lag]] != 0:
-                            if self.dates[i] == '1401-05-28' and var == 'gold-irr':
-                                print((self.values[var][self.dates[i]] /
-                                       self.values[var][self.dates[i-lag]])-1)
                             values[var][self.dates[i]] = (self.values[var][self.dates[i]]/
                                                 self.values[var][self.dates[i-lag]])-1
                         else:

@@ -124,6 +124,9 @@ def is_numeric_str(text:str)->bool:
     elif len(text.split('e'))==2:
         if is_numeric_str(text.split('e')[0]) and is_numeric_str(text.split('e')[1]):
             return True
+    elif len(text.split('E'))==2:
+        if is_numeric_str(text.split('E')[0]) and is_numeric_str(text.split('E')[1]):
+            return True
     elif text[0] == '-':
         text = text[1:]
     try:
@@ -216,6 +219,25 @@ def to_formated_str(value:str | int | float, decimals:int=4)->str:
     elif np.isnan(value) or value.imag != 0:
         return 'nan'
     else:
+        if 'e' in str(value):
+            parts = str(value).split('e')
+            if len(parts)>2:
+                raise ValueError(f"Error! {value} cannot split by 'e'.")
+            v, p = parts
+            if '.' in v:
+                parts = v.split('.')
+                if len(parts)>2:
+                    raise ValueError(f"Error! {value} cannot split by '.'.")
+                i,d = parts
+            else:
+                i,d = v,'0'
+            if p[0]!='-':
+                value = f'{i}{d[:int(p[1:])]}.{d[int(p[1:]):]}'
+            else:
+                if len(i)<=-int(p):
+                    i = '0' * (-int(p)-len(i)+1) + i
+                value = f'{i[:int(p)]}.{i[int(p):]}{d}'
+
         splits = str(value).split('.')
         if len(splits) == 2:
             num, dec = splits
