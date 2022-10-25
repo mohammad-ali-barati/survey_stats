@@ -334,15 +334,19 @@ class Data:
                     is_first = False
                 else:
                     for j, val in enumerate(row):
-                        if val == na:
+                        if val.strip() == na:
                             values[vars[j]][i] = np.nan
                         elif is_numeric_str(val):
                             values[vars[j]][i] = to_float(val)
                         else:
                             values[vars[j]][i] = val.strip()
         else:
-            with open(path_file,'r', encoding='utf-8') as f:
-                lines = f.readlines()
+            try:
+                with open(path_file,'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+            except:
+                with open(path_file,'r') as f:
+                    lines = f.readlines()
             n = len(lines)
             values, vars = {}, []
             for j, var in enumerate(lines[0].split(',')):
@@ -352,6 +356,10 @@ class Data:
             for i in range(1,n):
                 for j, val in enumerate(lines[i].split(',')):
                     val = val.replace('ï»؟','').replace('\n','')
+                    try:
+                        val = val.strip()
+                    except:
+                        pass
                     if val == na:
                         values[vars[j]][i] = np.nan
                     elif is_numeric_str(val):
@@ -537,6 +545,14 @@ class Data:
             for var in variables:
                 self.fillna(var, method, replace)
 
+    def fill(self, variables:str|list[str]=[], value_find:any='', value_replace:any='')->Data:
+        if variables == []:
+            variables = self.variables()
+        for i in self.index():
+            for var in variables:
+                if self.values[var][i] == value_find:
+                    self.values[var][i] = value_replace
+
     def add_trend(self):
         j = 0
         self.values['trend'] = {}
@@ -548,7 +564,7 @@ class Data:
         if key=='' or key=='index':
             index, vars = self.index(), self.variables()
             index.sort(reverse=not ascending)
-            data = Data(self.type, {vars[0]:dict(zip(index, ['']*len(index)))})
+            data = Data(self.type, {vars[0]:dict(zip(index, [np.nan]*len(index)))})
             data.add_data(self)
             self.values = data.values
         else:
@@ -561,14 +577,18 @@ class Data:
                             if np.isnan(self.values[key][i])])
             index.sort(reverse=not ascending,key=lambda row: row[1])
             index = [i  for i,_ in index]
-            data = Data(self.type, {vars[0]:dict(zip(index, ['']*len(index)))})
+            data = Data(self.type, {vars[0]:dict(zip(index, [np.nan]*len(index)))})
             data.add_data(self)
             self.values = data.values
 
     @classmethod
     def read_text(cls, path_file:str, data_type:str='cross', na:any='', index:str='index', seprator:str=',')->Data:
-        with open(path_file,'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        try:
+            with open(path_file,'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except:
+            with open(path_file,'r') as f:
+                lines = f.readlines()
         n = len(lines)
         values, vars = {}, []
         for j, var in enumerate(lines[0].split(seprator)):
@@ -578,12 +598,16 @@ class Data:
         for i in range(1,n):
             for j, val in enumerate(lines[i].split(seprator)):
                 val = val.replace('ï»؟','').replace('\n','')
+                try:
+                    val = val.strip()
+                except:
+                    pass
                 if val == na:
                     values[vars[j]][i] = np.nan
                 elif is_numeric_str(val):
                     values[vars[j]][i] = to_float(val)
                 else:
-                    values[vars[j]][i] = val.strip()
+                    values[vars[j]][i] = val
         data = cls(data_type, values)
         if index in vars:
             data.set_index(index)
@@ -686,7 +710,7 @@ class Data:
                 vali = col
                 if is_numeric_str(vali):
                     vali = to_float(vali)
-                elif vali == na:
+                elif vali.strip() == na:
                     vali = np.nan
                 val[titles[j]] = vali
             values[i] = val
@@ -1148,7 +1172,7 @@ class TimeSeries(Data):
                     raise ValueError(
                         f"Error! {month} isn't standard. seprator must be '-' or '/'.")
                 if len(month.split(sep)) != 2:
-                        raise ValueError(f"Error! {month} isn't standard. month must has 2 part.")
+                    raise ValueError(f"Error! {month} isn't standard. month must has 2 part.")
                 y, m = [int(x) for x in month.split(sep)]
                 return f'{y+1}-01' if m==12 else f'{y}-{m+1}' if m+1>9 else f'{y}-0{m+1}'
             
@@ -1161,6 +1185,7 @@ class TimeSeries(Data):
             #endregion
             
             res = TimeSeries('time', sums)
+            res.addna()
             res.sort()
 
             #region edit last month
@@ -1274,7 +1299,8 @@ class TimeSeries(Data):
                     #region start and end values
                     start, nans, dates, month_dates = True, 0, [], []
                     for date in self.dates:
-                        if not np.isnan(self.values[var][date]):
+                        # print(var, date, self.values[var][date])
+                        if not is_nan(self.values[var][date]):
                             dates.append(date)
                             start = False
                         elif not np.isnan(self.values[var][date]) and not start:
@@ -1641,18 +1667,18 @@ class TimeSeries(Data):
         values, v = {}, 0
         for var in vars:
             v += 1
-            values[var] = {}
+            values[f'gr_{var}'] = {}
             for i in range(len(self.dates)):
                 if not is_average:
                     if not (is_nan(self.values[var][self.dates[i-lag]], True) or 
                             is_nan(self.values[var][self.dates[i]], True)):
                         if self.values[var][self.dates[i-lag]] != 0:
-                            values[var][self.dates[i]] = (self.values[var][self.dates[i]]/
+                            values[f'gr_{var}'][self.dates[i]] = (self.values[var][self.dates[i]]/
                                                 self.values[var][self.dates[i-lag]])-1
                         else:
-                            values[var][self.dates[i]] = np.nan
+                            values[f'gr_{var}'][self.dates[i]] = np.nan
                     else:
-                        values[var][self.dates[i]] = np.nan
+                        values[f'gr_{var}'][self.dates[i]] = np.nan
                 else:
                     s, s_lag = 0, 0
                     n, n_lag = 0, 0
@@ -1664,21 +1690,23 @@ class TimeSeries(Data):
                             s_lag += self.values[var][self.dates[i-lag-l]]
                             n_lag += 1
                     if n!=0 and n_lag!=0:
-                        values[var][self.dates[i]] = (s/n)/(s_lag/n_lag)-1
+                        values[f'gr_{var}'][self.dates[i]] = (s/n)/(s_lag/n_lag)-1
                     else:
-                        values[var][self.dates[i]] = np.nan
+                        values[f'gr_{var}'][self.dates[i]] = np.nan
                 if print_progress:
                     left_time = time.perf_counter() - start_time
                     total_time = left_time * (len(vars)*len(self.dates))/((v-1)*len(self.dates)+i+1)
                     remain_time = total_time-left_time
                     left_time = seconds_to_days_hms(left_time)
                     remain_time = seconds_to_days_hms(remain_time)
-                    print(f"{v} of {len(vars)} variables ({v/len(vars)*100:.2f}%) and {i+1} of {len(self.dates)} dates of {var} ({(i+1)/len(self.dates)*100:.2f}%). left: {left_time}, remain: {remain_time}.", end='\r')
+                    print(f"{v} of {len(vars)} variables ({v/len(vars)*100:.2f}%) and {i+1} of {len(self.dates)} dates of {var} ({(i+1)/len(self.dates)*100:.2f}%). left: {left_time}, remain: {remain_time}." + ' '*20, end='\r')
         if print_progress:
             print('All growths are calculated', ' '*80)
         data = TimeSeries(values=values)
         data.complete_dates()
         return data
 
+    # def addna(self)->TimeSeries:
+    #     self.addna().to_timeseries()
 
 

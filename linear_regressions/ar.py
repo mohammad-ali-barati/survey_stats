@@ -56,7 +56,7 @@ class Model:
                     if cor.imag != 0:
                         cors.append((var,0))
                     else:
-                        cors.append((var.name, cor.real))
+                        cors.append((var.name, abs(cor.real)))
                 except Exception as e:
                     if print_progress:
                         print(f"Error in correlation of {var.name}. {e}")
