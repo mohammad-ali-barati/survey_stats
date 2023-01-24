@@ -45,6 +45,7 @@ class Model:
                 import statsmodels.api as sm
                 with warnings.catch_warnings():
                     warnings.filterwarnings('ignore')
+                    warnings.filterwarnings("ignore", category=RuntimeWarning) 
                     model = sm.MNLogit(y, x)
                     model.exog_names[:] = indep_names
                     res = model.fit(disp=0, skip_hessian= 0, method_kwargs={'warn_convergence': False})
@@ -162,9 +163,9 @@ class Model:
                     cors.append(cor.real)
             cors_sorted = sorted(cors, reverse=True)
             vars_, cors_ = vars.copy(), cors.copy()
-            indep_vars, no=[], 0
+            indep_vars, no=[], vars_no
             for cor in cors_sorted:
-                if no >= vars_no:
+                if no == 0:
                     break
                 else:
                     var = vars_[cors_.index(cor)]
@@ -177,7 +178,7 @@ class Model:
                             pass
                     if Variable(var).stats.count(sample) >= min_obs and r2:
                         indep_vars.append(var)
-                        no += 1
+                        no -= 1
                     vars_.remove(var)
                     cors_.remove(cor)
             f = '' if no_constant else '1+'

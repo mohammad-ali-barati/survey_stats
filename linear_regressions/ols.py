@@ -87,6 +87,7 @@ class Model:
         import warnings
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore')
+            warnings.filterwarnings("ignore", category=RuntimeWarning) 
             if self.formula != '':
                 indep_num = Formula(self.formula).split().calculate_all(sample.get_data(), skip_collinear=True)
                 indep_names = indep_num.variables()

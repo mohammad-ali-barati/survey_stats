@@ -111,7 +111,7 @@ class Data:
         rows += f'\n{len(self.index())} × {len(self.variables())}'
         return rows
 
-    def variables(self) -> list:
+    def variables(self) -> list[str]:
         return [var for var in self.values]
 
     def index(self, without_checking:bool=True) -> None:
@@ -150,12 +150,11 @@ class Data:
 
     def set_names(self, new_names:list[str]=[], old_names:list[str]=[]):
         new_dict,i = {},0
-        for v in self.values.keys():
-            if (v in old_names) or old_names==[]:
-                new_dict[new_names[i]] = self.values[v]
-                i+=1
+        for var in self.variables():
+            if var in old_names:
+                new_dict[new_names[old_names.index(var)]] = self.values[var]
             else:
-                new_dict[v] = self.values[v]
+                new_dict[var] = self.values[var]
         self.values = new_dict
 
     def select_variables(self, vars:list[str]=[]) -> Data:
@@ -954,7 +953,7 @@ class TimeSeries(Data):
     def type_of_dates(dates:list[str]):
         if dates == []:
             return 'daily'
-        elif type(dates[0]) == int:
+        elif is_numeric(dates[0]):
             return 'annual'
         else:
             seprator = '-' if len(dates[0].split('-')) != 1 else '/' if len(dates[0].split('/')) != 1 else ''
@@ -998,7 +997,10 @@ class TimeSeries(Data):
 
     def __init__(self, type:str='time', values: dict[dict] = {}) -> None:
         self.type = type
-        self.dates = list(values[list(values.keys())[0]].keys())
+        if values != {}:
+            self.dates = list(values[list(values.keys())[0]].keys())
+        else:
+            self.dates = []
         self.date_type = TimeSeries.type_of_dates(self.dates)
         self.values = values
         super().__init__('time', self.values)
@@ -1007,6 +1009,9 @@ class TimeSeries(Data):
         if self.dates != []:
             dates = []
             for date in self.dates:
+                if is_numeric(date):
+                    dates = self.dates
+                    break   # dates are annual
                 seprator = '/' if '/' in date else '-' if '-' in date else ''
                 if seprator == '':
                     raise ValueError(f"Error! seprator must be '-' or '/'.")
@@ -1073,10 +1078,11 @@ class TimeSeries(Data):
                             for date in old_dates:
                                 if date in self.values[var].keys():
                                     new_values[var][new_date] = self.values[var][date]
-            elif self.date_type != 'annual':
+            elif self.date_type == 'annual':
                 if not (is_numeric(start_dates) or is_numeric(end_dates)):
                     raise ValueError(f"Error! annual dates must be numeric.")
-                for y in range(start_dates, end_dates+1):
+                y = start_dates
+                while y <= end_dates:
                     dates.append(y)
                     for var in self.values.keys():
                         if not var in new_values.keys():
@@ -1085,6 +1091,7 @@ class TimeSeries(Data):
                             new_values[var][y] = self.values[var][y]
                         else:
                             new_values[var][y] = np.nan
+                    y += 1
             else:
                 raise ValueError(
                     f"Error! date_type '{self.date_type}' most be daily, weekly, monthly, seasonal, or annual")
@@ -1289,6 +1296,7 @@ class TimeSeries(Data):
         elif self.date_type == 'monthly':
             return self
         elif self.date_type == 'seasonal':
+            res = Data(values={})
             if method == 'curve':
                 #region Type Error
                 if self.date_type != 'seasonal':
@@ -1416,7 +1424,7 @@ class TimeSeries(Data):
                                 values_dict[f'{year}-02'] = m02 * total / (m01+m02+m03)
                                 values_dict[f'{year}-03'] = m03 * total / (m01+m02+m03)
                     #endregion
-                    values[var] = values_dict
+                    res.add_data(Data(values={var:values_dict}))
             else:
                 values = {}
                 start_year, start_season = [int(x) for x in self.dates[0].split('-')]
@@ -1434,7 +1442,7 @@ class TimeSeries(Data):
                                 values[var][date] = self.values[var][f'{year}-{(month-1)//3+1}']/3
                             elif method=='average':
                                 values[var][date] = self.values[var][f'{year}-{(month-1)//3+1}']
-            res = TimeSeries('time', values)
+            res = res.to_timeseries()
             res.reset_date_type()
             res.complete_dates()
             return res
@@ -1683,10 +1691,10 @@ class TimeSeries(Data):
                     s, s_lag = 0, 0
                     n, n_lag = 0, 0
                     for l in range(lag):
-                        if is_nan(self.values[var][self.dates[i-l]]):
+                        if not(is_nan(self.values[var][self.dates[i-l]],True)):
                             s += self.values[var][self.dates[i-l]]
                             n += 1
-                        if is_nan(self.values[var][self.dates[i-lag-l]]):
+                        if not(is_nan(self.values[var][self.dates[i-lag-l]],True)):
                             s_lag += self.values[var][self.dates[i-lag-l]]
                             n_lag += 1
                     if n!=0 and n_lag!=0:
@@ -1699,7 +1707,7 @@ class TimeSeries(Data):
                     remain_time = total_time-left_time
                     left_time = seconds_to_days_hms(left_time)
                     remain_time = seconds_to_days_hms(remain_time)
-                    print(f"{v} of {len(vars)} variables ({v/len(vars)*100:.2f}%) and {i+1} of {len(self.dates)} dates of {var} ({(i+1)/len(self.dates)*100:.2f}%). left: {left_time}, remain: {remain_time}." + ' '*20, end='\r')
+                    print(f"{v} of {len(vars)} variables ({v/len(vars)*100:.2f}%). left: {left_time}, remain: {remain_time}." + ' '*20, end='\r')
         if print_progress:
             print('All growths are calculated', ' '*80)
         data = TimeSeries(values=values)

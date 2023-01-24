@@ -302,7 +302,7 @@ class Equation:
                         if is_dynamic:
                             yf += forecast_data.values[self.dep_var + '_f'][sample.data.index()[n-lag]] * float(coefs_lags[j])
                         else:
-                            yf += forecast_data.values[self.dep_var][sample.data.index()[n-lag]] * float(coefs_lags[j])
+                            yf += sample.data.values[self.dep_var][sample.data.index()[n-lag]] * float(coefs_lags[j])
                     for j,var in enumerate(indep_exos):
                         yf += exos_data.values[var][i] * float(coefs_exos[j])
                     forecast_data.values[self.dep_var + '_f'][i] = yf
