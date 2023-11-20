@@ -1,22 +1,22 @@
-survey_stats Package
-====================
+# survey_stats Package
 
-survey_stats is a simple and powerfull package for data processing and statistics for emprical studies.
+survey_stats is a simple, light and usefull package for data processing and statistics for emprical studies that tries to use research logic instead of data logic.
 You can use [Github](https://github.com/mohammad-ali-barati/survey_stats/)
+
 [User Guide](https://raw.githubusercontent.com/mohammad-ali-barati/survey_stats/main/User%20Guide.docx)
 
-survey_stats is a Python package that provides a set of statistical tools for emprical studies. This package includes some tools for data processing and estimation of observation weights, linear and logistic regressions, as well as tree regression and classification that are adapted for both numerical and categorical variables. data structure in this package is compatible with pandas package.
+This package is under development, but until now it covers the most important tools needed for research, such as weighting non-random samples, preparing pivot tables in the sample, defining new variables using specific formulas or rules, filtering data, creating dummy variables, even reading and writing files such as csv, text, excel, access, ..., or saving and loading data by Pickle package, which makes the speed of reading and writing data much faster than files. In the latest version, it is possible to read and write large files without adding them all to RAM.
 
-Install
--------
+In this package, in addition to the tools will be developed separately, it is possible that the modules of the two famous packages, 'scikit-learn' and 'statsmodel', will be available with the logic of the current package. Until now, the exclusive tools of this package include ols and tree-regression. However, logistic and multinomial logistic regressions are also available from the above two packages.
+
+# Install
+
 ``pip install survey-stats``
 
-
-Import Data
------------
+# Data Structure
 
 ```python3
-from survey_stats.data_processing import Data_Types, Data 
+from survey_stats.data_process import Data_Types, Data 
 values = {
 	'name': {1: 'Cyrus', 2: 'Mandana', 3: 'Atossa'},
 	'age': {1: 32, 2: 65, 3: 40},
@@ -25,21 +25,21 @@ values = {
 data = Data(Data_Types.cross, values)
 # or
 data = Data('cross', values)
-# or
-data = Data.read_csv('data.csv')
 ```
 
-Pandas <-> Data
----------------
-- pd.DataFrame --> Data
+# Pandas
+
+Since the Pandas package is familiar to data analysts, it is necessary to explain that the data structure in this package is very close to the data structure in Pandas and they can be easily converted to each other. However, the current package has been tried to use research logic instead of data logic, which is more understandable and simple for researchers.
+
+- pandas.DataFrame --> survey_stats.Data
 
 ```python3
+from survey-stats.data_process import Data
 # df = a DataFrame of Pandas
-values = df.to_dict()
-data = Data('cross', values)
+data = Data(values=df.to_dict())
 ```
 
-- Data --> pd.DataFrame
+- survey_stats.Data --> pandas.DataFrame
 
 ```python3
 import pandas as pd
@@ -47,9 +47,127 @@ import pandas as pd
 df = pd.DataFrame(data.values)
 ```
 
-Data Processing
----------------
-some functions on data:
+# Modules Structure
+
+survey-stats
+
+|______data_process
+
+-------|____Data
+
+-------|____TimeSeries(Data)
+
+-------|____Sample
+
+-------|____DataBase
+
+|______basic_model
+
+-------|____Model
+
+-------|____Formula
+
+-------|____Formulas
+
+|______date
+
+-------|____Date
+
+|______functions
+
+|______linear_regressions
+
+-------|____ols
+
+------------|____Model
+
+------------|____Equation
+
+|______classification
+
+-------|____tree_based_regression
+
+------------|____Model
+
+------------|____Equation
+
+|______statsmodels
+
+-------|____logit
+
+------------|____Model
+
+------------|____Equation
+
+-------|____multinominal_logit
+
+------------|____Model
+
+------------|____Equation
+
+|______sklearn
+
+-------|____ols
+
+------------|____Model
+
+------------|____Equation
+
+-------|____logit
+
+------------|____Model
+
+------------|____Equation
+
+-------|____multinominal_logit
+
+------------|____Model
+
+------------|____Equation
+
+# data_process
+
+## Data
+
+some methods on data:
+
+* dtype
+* set_dtype
+* to_str
+* variables
+* items
+* index
+* fix_index
+* set_index
+* set_names
+* select_variables
+* select_index
+* drop
+* drop_index
+* add_a_dummy
+* add_dummies
+* dropna
+* drop_all_na
+* value_to_nan
+* to_numpy
+* add_data
+* transpose
+* count
+* add_trend
+* fillna
+* fill
+* sort
+* add_a_variable
+* to_timeseries
+* line_plot
+* add_index
+* add_a_group_variable
+* load and dump
+* read_text, to_text, and add_to_text
+* read_csv, to_csv, and add_to_csv
+* read_xls and to_xls
+* read_excel and to_excel
+* read_access and to_access
 
 ```python3
 print(data)
@@ -72,12 +190,20 @@ data_t = data.transpose()
 data.to_csv('data2.csv')
 ```
 
-Sample
-------
+## Sample
+
 sample is sub-set of a data.
 
+some method on Sample:
+
+* get_data
+* split
+* get_weights
+* group
+* Stats: weight, sum, average, var, std, distribution, median, mode, correl, min, max, percentile, gini
+
 ```python3
-from survey_stats.data_processing import Data, Sample
+from survey_stats.data_process import Data, Sample
 s = Sample(data, [0,5,6,10])
 data_s = s.get_data()
 train_sample, test_sample = main_sample.split(0.7,['train', 'test'], 'start')
@@ -100,59 +226,73 @@ sample.get_weights(cond, totals)
 print(sample.data)
 ```
 
-Variable
---------
-A variable is a series of a data set. Variables can be numeric or categorical types.
+## TimeSeries
 
-```python3
-from survey_stats.basic_model import Variable_Types, Variable
-x = Variable('x', Variable_Types.numeric)
-# or
-x = Variable('x', 'numeric')
-# or
-x = Variable('x')
-# or base on values in a data set
-x = Variable.from_data(data, 'x')
-# Values of a variable without repeating in a sample
-values = x.values(sample)
-# all sub-sets of values
-x_values = x.values_set(sample)
+timeseries is a special type of Data that index is 'jalali' date.
 
-# stats: mean, std, count, tss, distribution, sum
-#	 median, mode, min, max, percentile
-print(x.stats.mode(sample))
+methods:
 
-# mapping
-old_values = [['under diploma', 'diploma'], ['bachelor', 'master', 'phd']]
-new_values = ['non-academic', 'academic']
-# or
-old_values = ['<2012', '<=2015', '<=2017', '>2017']
-new_values = ['before sanction', 'first oil sanction',
-		'JCPOA period', 'second oil sanction']
-v1 = Variable('year', 'numeric')
-v2_data = v1.map(Sample(data), old_values,new_values,other='-')
-```
+* type_of_dates
+* complete_dates
+* reset_date_type
+* to_monthly
+* to_daily
+* to_weekly
+* to_annual
+* to_growth
+* to_moving_average
+* to_lead
+* to_lag
 
-Formula
--------
-Formula is a mathematical relation. Formula class allows you to solve mathematical relationships on data, thereby either defining new variables or filtering the data set according to the values of a formula.
+## DataBase
 
-mathematic functions: 
-only on time series variables: 
--	lag(‘variable_name’,’number of lags’)= var[i-lags]
--	dif(‘variable_name’,’number of lags’)=var[i]-var[i-lags]
--	gr(‘variable_name’,’number of lags’)=var[i]/var[i-lags]-1
-on all variables:
--	log(‘variable_name’): Napierian logarithm (loge(x))
--	exp(‘variable_name’): Exponential function (ex)
-statistic functions:
--	sum(‘variable_name’): summation of variable in data.
--	count(‘variable_name’): total non-blank values of variable in data.
--	mean(‘variable_name’): weighted mean of variable in data.
--	std(‘variable_name’): weighted standard deviation of variable in data.
--	min(‘variable_name’): minimum of values of variable in data.
---	max(‘variable_name’) maximum of values of variable in data.
+database a dict of some Data: {'name':Data, ...}
 
+methods:
+
+* dump
+* load
+* table_list
+* variable_list
+* query
+
+# basic_model
+
+## Formula
+
+Formula is a expersion of mathematic operators and functions that can calculate on a data.\n
+
+    for example:
+
+    - formula: age + age**2 - exp(height/weight) + log(year)\n
+
+    operators: all operators on python.\n
+
+    - '+', '-', '*', '/', '//', '**', '%', '==', '!=', '>', '<', '>=', '<=', 'and', 'or', 'not', 'is', 'is not', 'in', 'not in'.\n
+
+    functions: all functions on 'math' madule.\n
+
+    - 'acos', 'acosh', 'asin', 'asinh', 'atan', 'atan2', 'atanh',
+
+    'ceil', 'comb', 'copysign', 'cos', 'cosh', 'degrees', 'dist',
+
+    'e', 'erf', 'erfc', 'exp', 'expm1', 'fabs', 'factorial', 'floor',
+
+    'fmod', 'frexp', 'fsum', 'gamma', 'gcd', 'hypot', 'inf', 'isclose',
+
+    'isfinite', 'isinf', 'isnan', 'isqrt', 'lcm', 'ldexp', 'lgamma',
+
+    'log', 'log10', 'log1p', 'log2', 'modf', 'nan', 'nextafter',
+
+    'perm', 'pi', 'pow', 'prod', 'radians', 'remainder', 'sin',
+
+    'sinh', 'sqrt', 'tan', 'tanh', 'tau', 'trunc', 'ulp'
+
+methods:
+
+* split
+* filter
+* calculate
 
 ```python3
 from survey_stats.basic_model import Formula
@@ -169,23 +309,77 @@ f = Formula('year>1397')
 after1397 = f.filter(1,data)
 ```
 
-FormulaTable
------
-Table is a pivot table.
+## Formulas
+
+A list of Formula.
+
+methods:
+
+* calculate_all
+
+# linear_regressions.ols
+
+Linear regression consists of a equation, which are numerically independent variables and are combined linearly with each other.
+Categorical variables are converted to dummy variables and then used as a numerical variable in the model. We use the Formula and Formulas class to construct these variables.
+Simple regression is a linear regression with a numerically dependent variable that is estimated by the least squares method.
+In logistic regression, the dependent variable is a binary variable, or a numerical variable consisting of zeros and ones, or a categorical variable with only two values.
+
+## Model
+
+methods:
+
+* estimate
+* estimate_skip_collinear
+* estimate_most_significant
+
+## Equation
+
+methods:
+
+* anova
+* table
+* dump
+* load
+* wald_test
+* forecast
 
 ```python3
-from survey_stats.basic_model import FormulaTable
-table = FormulaTable('p',['count(x)', 'mean(x)', 'std(x)'],Sample(data))
-table_data = table.to_data()
-table.plot()	# must install matplotlib
+from survey_stats.linear_regressions import simple_regression, logistic_regression
+model1 = simple_regression.Model('y', '1 + x1 + x2 + x2**2')
+model2 = logistic_regression.Model('y', '1 + x1 + x2 + x2**2')
+# samples of s_trian, s_test have already been defined.
+eq1 = model1.estimate(s_train)
+print(eq1)
+data_f = eq1.forecast(s_test)
+print(eq1.goodness_o_fit(s_test)
+eq1.save('test')
+# or instead of estimating a model, you can load a previously estimated model, and use it to predict.
+eq2 = Equation.load('test')
+eq2.goodness_of_fit(s_test)
 ```
 
-tree_based_regression
----------------------
+# classification.tree_based_regression
+
 Decision tree is one of the modelling approaches used in statistics, data mining and machine learning. Tree models where the target variable can take a discrete set of values are called classification trees. Decision trees where the target variable can take continuous values (typically real numbers) are called regression trees. Decision trees are among the most popular machine learning algorithms given their intelligibility and simplicity.
 Of course, since we also have regressions with discrete variables, such as logistic regressions, so in this package we have included both regression trees and classification trees in the tree_based_regression module.
 Currently, the sklearn package is used for the regression tree and the classification tree. But this package does not work by categorical variables, and this is very restrictive for survey researches because many of the variables in this researches are categorical. It also does not take into account the weight of the observations in its calculations. Therefore, this package has been significantly developed compared to it.
 
+## Model
+
+methods:
+
+* estimate
+
+## Equation
+
+methods:
+
+* forecast
+* goodness_of_fit
+* first_nodes
+* plot
+* dump
+* load
 
 ```python3
 from survey_stats import tree_based_regression
@@ -205,25 +399,91 @@ eq2 = Equation.load('total')
 eq2.goodness_of_fit(s_total)
 ```
 
-linear_regressions
-------------------
-Linear regression consists of a equation, which are numerically independent variables and are combined linearly with each other.
-Categorical variables are converted to dummy variables and then used as a numerical variable in the model. We use the Formula and Formulas class to construct these variables.
-Simple regression is a linear regression with a numerically dependent variable that is estimated by the least squares method.
-In logistic regression, the dependent variable is a binary variable, or a numerical variable consisting of zeros and ones, or a categorical variable with only two values.
+# sklearn.logit
 
+## Model
 
-```python3
-from survey_stats.linear_regressions import simple_regression, logistic_regression
-model1 = simple_regression.Model('y', '1 + x1 + x2 + x2**2')
-model2 = logistic_regression.Model('y', '1 + x1 + x2 + x2**2')
-# samples of s_trian, s_test have already been defined.
-eq1 = model1.estimate(s_train)
-print(eq1)
-data_f = eq1.forecast(s_test)
-print(eq1.goodness_o_fit(s_test)
-eq1.save('test')
-# or instead of estimating a model, you can load a previously estimated model, and use it to predict.
-eq2 = Equation.load('test')
-eq2.goodness_of_fit(s_test)
-```
+methods:
+
+* estimate
+* estimate_skip_collinear
+
+## Equation
+
+methods:
+
+* dump
+* load
+* forecast
+
+# sklearn.multinominal_logit
+
+## Model
+
+methods:
+
+* estimate
+* estimate_skip_collinear
+
+## Equation
+
+methods:
+
+* dump
+* load
+* forecast
+
+# sklearn.ols
+
+## Model
+
+methods:
+
+* estimate
+* estimate_skip_collinear
+* estimate_most_significant
+
+## Equation
+
+methods:
+
+* anova
+* table
+* dump
+* load
+* wald_test
+* forecast
+
+# statsmodels.logit
+
+## Model
+
+methods:
+
+* estimate
+
+## Equation
+
+methods:
+
+* dump
+* load
+* forecast
+* table
+
+# statsmodels.multinominal_logit
+
+## Model
+
+methods:
+
+* estimate
+
+## Equation
+
+methods:
+
+* dump
+* load
+* forecast
+* table
