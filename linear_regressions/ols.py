@@ -11,8 +11,10 @@ class Model:
     def __init__(self, dep_var:str, formula:str='', indep_vars:str=[], has_constant:bool=True):
         self.dep_var = dep_var
         formula = formula.replace(' ','')
-        if has_constant and formula!='' and '1+'!=formula[:2] and not '+1+' in formula and '+1'!=formula[-2:]:
+        if has_constant and formula!='' and (not '1+'!=formula[:2]) and (not '+1+' in formula) and (not '+1'!=formula[-2:]):
             formula = '1+' + formula
+        if '1+'!=formula[:2] or '+1+' in formula or '+1'!=formula[-2:]:
+            has_constant = True
         self.formula = formula
         self.indep_vars = list(set(indep_vars))
         self.has_constant = has_constant
@@ -35,11 +37,13 @@ class Model:
 
     def estimate(self, sample:Sample, print_progress:bool=False, indent:int=0, max_lenght:int=-1):
         if self.formula != '':
+            if self.has_constant and not '1' in sample.data.variables():
+                sample.data.add_a_variable('1',[1 for i in sample.data.index()])
             if sample.weights == '1':
                 data = sample.data.select_variables([v for v in sample.data.variables() if v in self.formula or v in self.dep_var]).select_index(sample.index.copy())
             elif sample.weights in data.variables():
                 data = sample.data.select_variables([v for v in sample.data.variables() if v in self.formula or v in self.dep_var or v == sample.weights]).select_index(sample.index.copy())
-            indep_num = Formula(self.formula).split().calculate_all(data, skip_collinear=True)
+            indep_num = Formula(self.formula).split().calculate_all(data)
             indep_names = indep_num.variables()
             self.indep_vars = indep_names.copy()
             if self.has_constant:
@@ -64,6 +68,13 @@ class Model:
             if sample.weights != '1':
                 w_num = data.select_variables([sample.weights])
             data.add_a_variable('1', [1 for i in data.index()])
+            y_arr = data.select_variables([self.dep_var]).to_numpy()
+            x_arr = data.select_variables(['1']+self.indep_vars).to_numpy()
+        elif self.has_constant:
+            data = sample.data.select_variables([self.dep_var]).select_index(sample.index.copy())
+            data.add_a_variable('1', [1 for i in data.index()])
+            if sample.weights != '1':
+                w_num = data.select_variables([sample.weights])
             y_arr = data.select_variables([self.dep_var]).to_numpy()
             x_arr = data.select_variables(['1']+self.indep_vars).to_numpy()
         else:
@@ -283,7 +294,7 @@ class Equation:
             return 1-(1-self.r2())*self.df_total()/self.df()
 
         def p_values(self):
-            return [(1 - scipy_stats.t.cdf(abs(coefi / self.cov_var_coefs()[i][i]**0.5), self.df()))*2
+            return [(1 - float(scipy_stats.t.cdf(abs(coefi / self.cov_var_coefs()[i][i]**0.5), self.df())))*2
                             for i, coefi in enumerate(self.indep_coefs)]
 
         def f(self):
@@ -383,7 +394,7 @@ class Equation:
         res += f'R2: {format_floats(self.params.r2())}\n'
         res += f'Adjusted R2: {format_floats(self.params.r2adj())}\n'
         res += f'\nDependent variable: {self.dep_var}'
-        len_var = max([len(var) for var in self.indep_vars])
+        len_var = max([len(var) for var in self.indep_vars]) if self.indep_vars != [] else 9
         coefs = [format_floats(c) for c in self.indep_coefs]
         len_coefs = len(max(coefs))
         cov_vars = self.params.cov_var_coefs()
@@ -413,7 +424,7 @@ class Equation:
         res += '\n'
         return res
 
-    def dump(self, file_path:str):
+    def save(self, file_path:str):
         with open(file_path, 'wb') as f:
             pickle.dump(self, f)
         print('Results were saved successfully')
@@ -459,6 +470,9 @@ class Equation:
         return {'wald':W[0][0], 'p_value':p_value[0], 'result': result}
 
     def forecast(self, sample:Sample)->Data:
+        if self.formula == '1':
+            self.formula = ''
+            self.has_constant = True
         if self.formula != '':
             data = sample.data.select_variables([v for v in sample.data.variables() if v in self.formula]).select_index(sample.index.copy())
             indep_vars = self.indep_vars.copy()
@@ -476,7 +490,9 @@ class Equation:
                         indep_data.add_data(Formula(indep).calculate(sample.data))
                     except:
                         raise ValueError(f"'{indep}' is not in sample.")
-        else:
+        elif self.indep_vars != [] and self.indep_vars != ['1'] :
+            if '1' in self.indep_vars:
+                self.indep_vars.remove('1')
             data = sample.data.select_variables(self.indep_vars).select_index(sample.index.copy())
             indep_vars = self.indep_vars.copy()
             if self.has_constant:
@@ -491,6 +507,9 @@ class Equation:
                     indep_data.add_data(data.select_variables(indep))
                 else:
                     raise ValueError(f"'{indep}' is not in sample.")
+        elif self.has_constant:
+            self.indep_vars = ['1']
+            indep_data = Data(values={'1':{i:1 for i in sample.index}})
         
         forecast_data = Data(sample.data.type, {})
         forecast_data.values[self.dep_var + '_f'] = {}

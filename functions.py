@@ -3,7 +3,7 @@ from typing import Union
 import numpy as np
 import warnings
 warnings.filterwarnings("ignore")
-import jdatetime, datetime, time
+import jdatetime, datetime, time, math
 import random
 
 def number_of_digits(n:int, decimals:float=0)->int:
@@ -432,4 +432,27 @@ def list_to_str(a_list:list, min_lenght:int=50, indent:int=10):
             line = ' '*indent+f'{element}'
     if res ==[]:
         res.append(line)
+    return res
+
+def quantile(x:list, n:int=10)->list:
+    a = sorted([y for y in x if not is_nan(y)])
+    thre = [a[int(d*len(a)/n)] for d in range(1,n)]
+    res = []
+    for y in x:
+        if is_nan(y):
+            res.append(math.nan)
+        else:
+            k = 1
+            if y<thre[0]:
+                res.append(k)
+            else:
+                for j,d in enumerate(thre):
+                    if j>0:
+                        k += 1
+                        if thre[j-1]<=y<d:
+                            res.append(k)
+                            break
+                else:
+                    if d<=y:
+                        res.append(k+1)
     return res

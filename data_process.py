@@ -634,13 +634,15 @@ class Data:
         return len([i for i in self.index()
                    if len([v for v in self.variables() if is_nan(self.values[v][i])])==0])
     
-    def count(self, variables:list=[], index:list=[], reverse:bool=False)->int:
+    def count(self, variables:str|list=[], index:list=[], reverse:bool=False)->int:
         '''
         reverse=False -> the count of index that values of all variables are not nan.\n
         reverse=True -> the count of variables that values of them in all index are not nan.\n
         '''
         if variables==[]:
             variables = self.variables()
+        if isinstance(variables,str):
+            variables = [variables]
         if index==[]:
             index = self.index()
         if reverse:
@@ -767,7 +769,7 @@ class Data:
         data.complete_dates(print_progress=print_progress, indent=indent+subindent, subindent=subindent)
         return data
 
-    def line_plot(self, vars:list[str], print_progress:bool=False, indent:int=0):
+    def line_plot(self, vars:list[str], title:str='', show:bool=True, print_progress:bool=False, indent:int=0):
         '''
         A graph plots one or more variables.\n
         matplotlib must installed.\n
@@ -778,6 +780,7 @@ class Data:
         from matplotlib import pyplot as plt
         fig, ax = plt.subplots(1,1)
         plt.xticks(rotation='vertical')
+        plt.title(title)
         plt.margins(0.1)
         plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.2)
         legs = []
@@ -787,7 +790,10 @@ class Data:
         ax.legend(legs)
         interval = int(len(self)/20) if len(self)>40 else 2 if len(self)>40 else 1
         ax.set_xticks(ax.get_xticks()[::interval])
-        plt.show()
+        plt.tight_layout()
+        if show:
+            plt.show()
+        return plt
 
     def add_index(self, index:list, print_progress:bool=False, indent:int=0):
         '''
@@ -866,6 +872,17 @@ class Data:
                         self.values[name][i] = other if other!='' else self.values[variable][i]
             else:
                 raise ValueError(f"error! '{map}' is not dict.")
+
+    def to_float(self, vars:list[str]=[]):
+        if vars==[]:
+            vars = self.variables()
+        for var in vars:
+            for i in self.index():
+                g = self.values[var][i]
+                try:
+                    self.values[var][i] = float(g)
+                except:
+                    self.values[var][i] = math.nan
 
     #region reading and writing
     #region pickle
@@ -1267,12 +1284,26 @@ class Data:
     #endregion
     #region excel
     @classmethod
+    def read_excel_sheets(cls, path_file:str) -> list:
+        '''
+        return list of sheet names.\n
+        'openpyxl' or 'xlrd' must installed.\n
+        pip install openpyxl xlrd
+        '''
+        import openpyxl
+        try:
+            return openpyxl.load_workbook(path_file).sheetnames
+        except:
+            import xlrd
+            return xlrd.open_workbook(path_file, on_demand=True).sheet_names()
+
+    @classmethod
     def read_excel(cls, path_file:str, sheet:str|int=0, data_type:str='cross', na:any='', index:str='index',
                     first_row:int=0, first_col:int=0, data_only:bool=True, print_progress:bool=False, indent:int=0, subindent:int=5) -> Data:
         '''
         read data from a excel file.\n
-        'openpyxl' must installed.\n
-        pip install openpyxl
+        'openpyxl' or 'xlrd' must installed.\n
+        pip install openpyxl xlrd
         '''
         if print_progress:
             file_name = path_file.split('//')[-1]
@@ -1370,6 +1401,7 @@ class Data:
             if print_progress:
                 prelog = progress(start, i, len(indexs),prelog,index, True, indent+subindent)
         wb.save(path_file)
+        return wb
     #endregion
     #region access
     @classmethod
@@ -1565,11 +1597,11 @@ class Sample:
         '''
         if method == 'random':
             if self.weights == '1':
-                S1 = np.random.choice(self.index, int(ratio*len(self.index)), replace=False)
+                S1 = list(np.random.choice(self.index, int(ratio*len(self.index)), replace=False))
             else:
                 ws = sum([w for i, w in self.data.values[self.weights].items() if i in self.index])
                 weights = [w/ws for i, w in self.data.values[self.weights].items() if i in self.index]
-                S1 = np.random.choice(self.index, int(ratio*len(self.index)), p=weights, replace=False)
+                S1 = list(np.random.choice(self.index, int(ratio*len(self.index)), p=weights, replace=False))
 
             S2 = list(set(self.index)-set(S1))
         elif method == 'start':
@@ -1658,7 +1690,7 @@ class Sample:
             raise ValueError(f"Error! data must be include a string variable as group name and a numeric variable as population of group.")
 
     def group(self, by_variable:str, columns:list|str=[], method:str='average',
-              filter:dict={}, filter_operator:str='and',
+              filter:list[tuple]=[], filter_operator:str='and',
 
               print_progress:bool=False, indent:int=0,subindent:int=5)->Data:
         '''
@@ -1683,22 +1715,22 @@ class Sample:
         '''
         if columns==[]:
             columns = self.data.variables()
-        if not isinstance(columns[0], tuple):
-            columns = [(col, method) for col in columns]
-        elif isinstance(columns, str):
+        if isinstance(columns, str):
             columns = [(columns, method)]
+        elif not isinstance(columns[0], tuple):
+            columns = [(col, method) for col in columns]
         vals, indexs = set(), set()
         for i in self.index:
             filter_cond = True if filter_operator=='and' else False
             by_val = self.data.values[by_variable][i]
-            for var_filter, val_filter in filter.items():
+            for var_filter, val_filter in filter:
                 if not match_str(self.data.values[var_filter][i], val_filter):
                     if filter_operator=='and':
-                            filter_cond = False
-                            break
-                    elif filter_operator=='or':
-                        filter_cond = True
+                        filter_cond = False
                         break
+                elif filter_operator=='or':
+                    filter_cond = True
+                    break
             if not is_nan(by_val) and filter_cond:
                 vals.add(by_val)
                 indexs.add(i)
@@ -1718,7 +1750,7 @@ class Sample:
                 mins = {str(val):float('+inf') for val in vals}
                 maxs = {str(val):float('-inf') for val in vals}
             for i in indexs:
-                if not is_nan(x:=self.data.values[var][i]): # and filter_cond:
+                if not is_nan(x:=self.data.values[var][i]):
                     try:
                         counts[v:=str(self.data.values[by_variable][i])] += 1
                         distinct_count[v].add(x)
@@ -1743,6 +1775,7 @@ class Sample:
                         sqs[v] += w * x**2
                         mins[v] = min(mins[v], x)
                         maxs[v] = max(maxs[v], x)
+            
             if method == 'count':
                 values[f'{var}_{method}'] = counts
             if method == 'distinct_count':
@@ -1751,7 +1784,10 @@ class Sample:
                 values[f'{var}_{method}'] = sums
             elif method == 'average':
                 for val in vals:
-                    values[f'{var}_{method}'][val] = sws[val]/ws[val] if ws[val]>0 else math.nan
+                    try:
+                        values[f'{var}_{method}'][val] = sws[val]/ws[val] if ws[val]>0 else math.nan
+                    except:
+                        values[f'{var}_{method}'][str(val)] = sws[str(val)]/ws[str(val)] if ws[str(val)]>0 else math.nan
             elif method == 'var':
                 for val in vals:
                     values[f'{var}_{method}'][val] = (sqs[val]-sws[val]**2/ws[val])/ws[val] if ws[val]>0 else math.nan
@@ -2360,6 +2396,7 @@ class TimeSeries(Data):
                     prelog = progress(start_time, i, n, prelog, '', True, indent+2*subindent)
             if not is_standard:
                 self.set_index(var=self.dates,drop_var=False, print_progress=print_progress, indent=indent+subindent)
+            self.dates.sort()
             start_dates, end_dates = self.dates[0], self.dates[-1]
             if print_progress:
                 print(' '*(indent+subindent)+'chacking and completing dates')
@@ -2849,10 +2886,10 @@ class TimeSeries(Data):
         elif self.date_type == 'annual':
             pass    #TODO TimeSeries from annual to daily
 
-    def to_weekly(self, method:str='average', estimate_missings:bool=True,
+    def to_weekly(self, method:str='average',
                   print_progress:bool=False, indent:int=0, subindent:int=5)->TimeSeries:
         '''
-        convert data to a weekly data
+        convert data to a weekly data. This method currently only works on daily time series. 
         '''
         if print_progress:
             print(' '*indent + 'converting data to weekly.')
@@ -2892,6 +2929,47 @@ class TimeSeries(Data):
                 if print_progress:
                     prelog = progress(start_time, j, n, prelog, var, True, indent+subindent)
             return TimeSeries('time', values)
+
+    def to_seasonal(self, method:str='average',
+                  print_progress:bool=False, indent:int=0, subindent:int=5)->TimeSeries:
+        '''convert data to a seasonal data. This method currently only works on monthly time series.'''
+        if print_progress:
+            print(' '*indent + 'converting data to seasonal.')
+            start_time, prelog, n = time.perf_counter(), 0, len(self.variables())
+        if self.date_type == 'monthly':
+            values = {var:{} for var in self.variables()}
+            for j, var in enumerate(self.variables()):
+                sums, numbs, seasons = {}, {}, []
+                for date in self.dates:
+                    if '-' in date:
+                        y, m = date.split('-')
+                    elif '/' in date:
+                        date.split('/')
+                    else:
+                        raise ValueError(f'Error! {date} is not a standard date.')
+                    seasons.append(season:=f'{y}-{int((int(m)-1)/3)+1}')
+                    if not is_nan(x:=self.values[var][date]):
+                        if not season in sums:
+                            sums[season] = x
+                            numbs[season] = 1
+                        else:
+                            sums[season] += x
+                            numbs[season] += 1
+                if method == 'sum':
+                    values = sums
+                elif method == 'average':
+                    for season in seasons:
+                        try:
+                            values[var][season] = sums[season]/numbs[season]
+                        except:
+                            values[var][season] = math.nan
+                else:
+                    raise ValueError(f"Error! {method} is not a standard method. standard mathods are 'average' or 'sum'.")
+                if print_progress:
+                    prelog = progress(start_time, j, n, prelog, var, True, indent+subindent)
+            return TimeSeries('time', values)
+
+
 
     def to_annual(self, method:str='average', skip_editing_last_year:bool=True,
                    print_progress:bool=False, indent:int=0, subindent:int=5)->TimeSeries:

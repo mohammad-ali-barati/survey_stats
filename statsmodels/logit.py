@@ -14,7 +14,7 @@ class Model:
     def __init__(self, dep_var:str, formula:str='', indep_vars:str=[], has_constant:bool=True):
         self.dep_var = dep_var
         formula = formula.replace(' ','')
-        if has_constant and formula!='' and '1+'!=formula[:2] and not '+1+' in formula and '+1'!=formula[-2:]:
+        if has_constant and formula!='' and (not '1+'!=formula[:2]) and (not '+1+' in formula) and (not '+1'!=formula[-2:]):
             formula = '1+' + formula
         self.formula = formula
         self.indep_vars = list(set(indep_vars))
@@ -42,7 +42,7 @@ class Model:
                 data = sample.data.select_variables([v for v in sample.data.variables() if v in self.formula or v in self.dep_var]).select_index(sample.index.copy())
             elif sample.weights in data.variables():
                 data = sample.data.select_variables([v for v in sample.data.variables() if v in self.formula or v in self.dep_var or v == sample.weights]).select_index(sample.index.copy())
-            indep_num = Formula(self.formula).split().calculate_all(data, skip_collinear=True)
+            indep_num = Formula(self.formula).split().calculate_all(data)
             indep_names = indep_num.variables()
             self.indep_vars = indep_names.copy()
             if self.has_constant:
@@ -205,7 +205,7 @@ class Equation:
             res.values[f'{self.dep_var}_f'][i] = y_f[j]
         return res
 
-    def dump(self, file_path: str):
+    def save(self, file_path: str):
         with open(file_path, 'wb') as f:
             pickle.dump(self, f)
         print('Results were saved successfully')
